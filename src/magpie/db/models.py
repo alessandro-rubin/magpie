@@ -50,6 +50,9 @@ class TradeJournalEntry:
     # Metadata
     tags: list[str] = field(default_factory=list)
     notes: str | None = None
+    # Rationale (captured at entry/exit for retrospective analysis)
+    entry_rationale: str | None = None
+    exit_rationale: str | None = None
 
 
 @dataclass

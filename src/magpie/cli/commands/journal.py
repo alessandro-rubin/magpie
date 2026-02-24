@@ -80,6 +80,8 @@ def show_trade(trade_id: str = typer.Argument(..., help="Trade ID (or prefix).")
         ("Max Profit", format_currency(trade.max_profit)),
         ("Max Loss", format_currency(trade.max_loss)),
         ("Notes", trade.notes or "—"),
+        ("Entry rationale", trade.entry_rationale or "—"),
+        ("Exit rationale", trade.exit_rationale or "—"),
     ]
     for label, value in rows:
         table.add_row(label, value)

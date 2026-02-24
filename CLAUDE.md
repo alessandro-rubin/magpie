@@ -106,6 +106,7 @@ trade_id = create_trade(
     entry_iv=0.35,
     entry_delta=0.40,
     dte_at_entry=30,
+    entry_rationale="Bullish momentum after earnings beat; rolled up from $270/$280 to match price move.",
 )
 ```
 
@@ -120,6 +121,7 @@ update_trade_status(
     exit_reason="target_hit",
     realized_pnl=370.0,       # (8.20 - 4.50) * 100 contracts
     realized_pnl_pct=0.822,   # +82.2%
+    exit_rationale="Spread hit 80% of max profit with 10 DTE remaining; closing to lock in gains.",
 )
 
 from magpie.analysis.llm import mark_outcome
@@ -133,6 +135,19 @@ from magpie.market.snapshots import build_analysis_context
 context = build_analysis_context("AAPL")
 # context contains: underlying price/change, options chain with Greeks, IV metrics
 ```
+
+---
+
+## Trade rationale
+
+Every trade should capture **why** it was entered and exited. Two TEXT columns on `trade_journal`:
+
+- `entry_rationale` — thesis, market context, why this strike/expiry/strategy was chosen
+- `exit_rationale` — why the trade was closed (target hit reasoning, stop logic, roll decision)
+
+These are passed via `entry_rationale=` kwarg on `create_trade()` and `exit_rationale=` kwarg on `update_trade_status()`.
+
+For LLM-driven trades, `llm_analyses.reasoning_summary` captures the model's reasoning. The feedback query in `feedback.py` uses `COALESCE(t.entry_rationale, a.reasoning_summary)` so that interactive/MCP trade reasoning and LLM reasoning are both available for retrospective analysis.
 
 ---
 

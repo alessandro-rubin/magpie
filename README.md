@@ -216,3 +216,4 @@ uv run pytest
 - All trading defaults to **paper mode**. Set `ALPACA_PAPER=true` in `.env`.
 - The feedback loop improves over time: each closed trade updates `prediction_accuracy`, which is injected into future LLM prompts.
 - Prompt versions are tracked in `llm_analyses.prompt_version` so you can measure the impact of prompt changes on accuracy.
+- Every trade can store `entry_rationale` and `exit_rationale` — free-text reasoning captured at decision time. This powers retrospective analysis: review *why* a trade was made, not just *what* happened.

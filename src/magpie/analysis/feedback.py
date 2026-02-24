@@ -42,7 +42,9 @@ def compute_accuracy_stats(
             t.realized_pnl_pct,
             a.strategy_suggested,
             t.exit_time,
-            t.entry_time
+            t.entry_time,
+            COALESCE(t.entry_rationale, a.reasoning_summary) AS rationale,
+            t.exit_rationale
         FROM llm_analyses a
         LEFT JOIN trade_journal t ON a.linked_trade_id = t.id
         WHERE {where}

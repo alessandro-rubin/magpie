@@ -37,7 +37,8 @@ def create_trade(
             entry_iv, entry_delta, entry_theta, entry_vega, entry_gamma,
             entry_underlying_price, dte_at_entry,
             max_profit, max_loss, breakeven_price,
-            alpaca_order_id, alpaca_position_id, tags, notes
+            alpaca_order_id, alpaca_position_id, tags, notes,
+            entry_rationale
         ) VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?,
@@ -45,7 +46,8 @@ def create_trade(
             ?, ?, ?, ?, ?,
             ?, ?,
             ?, ?, ?,
-            ?, ?, ?, ?
+            ?, ?, ?, ?,
+            ?
         )
         """,
         [
@@ -59,6 +61,7 @@ def create_trade(
             kwargs.get("max_profit"), kwargs.get("max_loss"), kwargs.get("breakeven_price"),
             kwargs.get("alpaca_order_id"), kwargs.get("alpaca_position_id"),
             tags, kwargs.get("notes"),
+            kwargs.get("entry_rationale"),
         ],
     )
     return trade_id
@@ -72,6 +75,7 @@ def update_trade_status(
     exit_reason: str | None = None,
     realized_pnl: float | None = None,
     realized_pnl_pct: float | None = None,
+    exit_rationale: str | None = None,
 ) -> None:
     """Update trade status and exit information."""
     conn = get_connection()
@@ -79,10 +83,12 @@ def update_trade_status(
         """
         UPDATE trade_journal
         SET status = ?, exit_price = ?, exit_time = ?, exit_reason = ?,
-            realized_pnl = ?, realized_pnl_pct = ?, updated_at = NOW()
+            realized_pnl = ?, realized_pnl_pct = ?, exit_rationale = ?,
+            updated_at = NOW()
         WHERE id = ?
         """,
-        [status, exit_price, exit_time, exit_reason, realized_pnl, realized_pnl_pct, trade_id],
+        [status, exit_price, exit_time, exit_reason, realized_pnl, realized_pnl_pct,
+         exit_rationale, trade_id],
     )
 
 
@@ -137,7 +143,8 @@ def list_trades(
                entry_iv, entry_delta, entry_theta, entry_vega, entry_gamma,
                entry_underlying_price, dte_at_entry,
                max_profit, max_loss, breakeven_price,
-               alpaca_order_id, alpaca_position_id, tags, notes
+               alpaca_order_id, alpaca_position_id, tags, notes,
+               entry_rationale, exit_rationale
         FROM trade_journal {where}
         ORDER BY created_at DESC
         LIMIT ?
@@ -160,7 +167,8 @@ def get_trade(trade_id_prefix: str) -> TradeJournalEntry | None:
                entry_iv, entry_delta, entry_theta, entry_vega, entry_gamma,
                entry_underlying_price, dte_at_entry,
                max_profit, max_loss, breakeven_price,
-               alpaca_order_id, alpaca_position_id, tags, notes
+               alpaca_order_id, alpaca_position_id, tags, notes,
+               entry_rationale, exit_rationale
         FROM trade_journal
         WHERE id LIKE ?
         LIMIT 1
@@ -210,4 +218,6 @@ def _row_to_entry(row: tuple) -> TradeJournalEntry:
         alpaca_position_id=row[31],
         tags=list(row[32]) if row[32] else [],
         notes=row[33],
+        entry_rationale=row[34],
+        exit_rationale=row[35],
     )
