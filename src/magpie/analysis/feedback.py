@@ -23,8 +23,8 @@ def compute_accuracy_stats(
     """
     conn = get_connection()
 
-    filters = ["a.created_at >= NOW() - INTERVAL ? DAY", "a.was_correct IS NOT NULL"]
-    params: list = [window_days]
+    filters = [f"a.created_at >= NOW() - INTERVAL {int(window_days)} DAY", "a.was_correct IS NOT NULL"]
+    params: list = []
 
     if symbol:
         filters.append("a.underlying_symbol = ?")

@@ -19,10 +19,10 @@ def get_pnl_summary(
 
     filters = [
         "status = 'closed'",
-        "exit_time >= NOW() - INTERVAL ? DAY",
+        f"exit_time >= NOW() - INTERVAL {int(window_days)} DAY",
         "realized_pnl IS NOT NULL",
     ]
-    params: list = [window_days]
+    params: list = []
 
     if symbol:
         filters.append("underlying_symbol = ?")
@@ -78,13 +78,13 @@ def get_equity_curve(days: int = 90) -> list[dict]:
     """Return daily portfolio equity snapshots for charting."""
     conn = get_connection()
     rows = conn.execute(
-        """
+        f"""
         SELECT snapshot_date, equity, unrealized_pnl, realized_pnl_today
         FROM portfolio_snapshots
-        WHERE snapshot_date >= CURRENT_DATE - INTERVAL ? DAY
+        WHERE snapshot_date >= CURRENT_DATE - INTERVAL {int(days)} DAY
         ORDER BY snapshot_date ASC
         """,
-        [days],
+        [],
     ).fetchall()
 
     return [
