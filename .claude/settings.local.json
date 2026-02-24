@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:docs.alpaca.markets)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "mcp__alpaca__get_all_positions",
+      "mcp__alpaca__get_account_info",
+      "mcp__alpaca__get_clock",
+      "mcp__alpaca__get_stock_snapshot",
+      "mcp__alpaca__get_option_chain"
     ]
   }
 }

@@ -59,26 +59,52 @@ You can verify the MCP is active by asking in Claude Code:
 
 ---
 
-## CLI Usage
+## CLI Commands
+
+### `magpie journal` — Trade Diary
 
 ```bash
-# Show help
-uv run magpie --help
+uv run magpie journal list                    # List all trades
+uv run magpie journal list --status open      # Filter by status (pending, open, closed)
+uv run magpie journal list --symbol NVDA      # Filter by ticker
+uv run magpie journal list --mode paper       # Filter by mode (paper / hypothetical)
+uv run magpie journal list --limit 50         # Change row limit (default 20)
+uv run magpie journal show <trade-id>         # Full detail on a trade (ID prefix works)
+```
 
-# Build market context for a symbol and print it for LLM review
-uv run magpie analyze AAPL
+### `magpie positions` — Live Position View
 
-# View trade journal
-uv run magpie journal list
-uv run magpie journal show <trade-id>
+```bash
+uv run magpie positions                       # Show all open positions from journal
+uv run magpie positions --sync                # Sync from Alpaca first, then display
+```
 
-# View open positions (use --sync to pull from Alpaca first)
-uv run magpie positions
-uv run magpie positions --sync
+The `--sync` flag pulls live data from Alpaca, updates unrealized P&L, and auto-closes positions that no longer exist on Alpaca's side.
 
-# P&L and LLM accuracy report
-uv run magpie report
-uv run magpie report --symbol AAPL --window 30
+### `magpie report` — P&L + LLM Accuracy
+
+```bash
+uv run magpie report                          # 30-day P&L summary + LLM win rate
+uv run magpie report --symbol TSLA            # Filter to one ticker
+uv run magpie report --window 7               # Change rolling window (days)
+```
+
+Shows closed trade stats (wins, losses, win rate, avg return) and LLM prediction accuracy by strategy and prompt version.
+
+### `magpie analyze` — Market Analysis
+
+```bash
+uv run magpie analyze run AAPL                # Build context + run LLM analysis
+uv run magpie analyze run AAPL --context      # Print market context/prompt only (no LLM call)
+uv run magpie analyze run AAPL --hypothetical # Log as hypothetical trade (no order placed)
+```
+
+If `ANTHROPIC_API_KEY` is not set, the command prints the formatted prompt so you can paste it into Claude Code for interactive analysis via the Alpaca MCP server.
+
+### General
+
+```bash
+uv run magpie --help                          # Show all available commands
 ```
 
 **Utility scripts**
