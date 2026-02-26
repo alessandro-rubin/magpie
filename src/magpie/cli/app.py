@@ -46,5 +46,31 @@ app.add_typer(positions.app, name="positions", help="View and sync Alpaca positi
 app.add_typer(report.app, name="report", help="P&L and LLM accuracy reports.")
 
 
+@app.command()
+def dashboard(
+    port: int = typer.Option(8501, "--port", "-p", help="Port for the dashboard server."),
+) -> None:
+    """Launch the Streamlit visualization dashboard."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    app_path = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
+    console.print(f"[bold]Starting Magpie dashboard on port {port}...[/bold]")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(app_path),
+            "--server.port",
+            str(port),
+            "--server.headless",
+            "true",
+        ],
+    )
+
+
 if __name__ == "__main__":
     app()

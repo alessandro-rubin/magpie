@@ -50,10 +50,15 @@ src/magpie/
 │   ├── risk.py         Pre-trade checks: position size, daily loss limit
 │   ├── review.py       Rich confirmation panel — human gate before any order
 │   └── orders.py       alpaca-py order placement (paper only)
+├── dashboard/
+│   ├── app.py          Streamlit multipage root
+│   ├── data.py         Cached DB queries returning DataFrames for charts
+│   ├── payoff.py       Payoff diagram math (P&L at expiry, breakevens)
+│   └── pages/          equity, payoff_page, greeks, winrate
 └── cli/
     ├── app.py          Typer root; runs DB migrations on startup
     ├── display.py      Shared Rich helpers (tables, panels, color styles)
-    └── commands/       analyze, journal, positions, report
+    └── commands/       analyze, journal, positions, report, dashboard
 ```
 
 ---
@@ -188,6 +193,28 @@ FROM llm_analyses
 WHERE was_correct IS NOT NULL
 GROUP BY prompt_version;
 ```
+
+---
+
+## Dashboard
+
+Streamlit-based web frontend for interactive visualization. Launch with:
+
+```bash
+uv run magpie dashboard           # opens http://localhost:8501
+uv run magpie dashboard --port 9000  # custom port
+```
+
+Four pages:
+
+| Page | Data source | Charts |
+|---|---|---|
+| Equity & Drawdown | `portfolio_snapshots` | Equity line, drawdown %, daily P&L bars |
+| Payoff Diagrams | `trade_journal.legs` JSON | P&L at expiry with breakevens, per-leg overlay |
+| Greeks Dashboard | `trade_journal` + `option_snapshots` | Portfolio Greeks exposure, IV history, per-contract Greeks |
+| Win Rates | `trade_journal` + `llm_analyses` | Win rate by strategy/symbol/prompt, rolling win rate, P&L histogram |
+
+All queries live in `dashboard/data.py` with `@st.cache_data(ttl=60)`. Payoff math is in `dashboard/payoff.py` (pure functions, unit tested). Each page handles empty data gracefully.
 
 ---
 
