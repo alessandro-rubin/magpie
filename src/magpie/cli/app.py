@@ -32,7 +32,7 @@ def main(
         rprint(f"magpie [bold]{__version__}[/bold]")
         raise typer.Exit()
 
-    if ctx.invoked_subcommand is not None:
+    if ctx.invoked_subcommand is not None and ctx.invoked_subcommand != "dashboard":
         _init_db()
 
 

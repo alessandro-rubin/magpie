@@ -10,7 +10,10 @@
       "mcp__alpaca__get_option_chain",
       "mcp__alpaca__get_orders",
       "mcp__alpaca__get_stock_latest_trade",
-      "mcp__alpaca__get_option_snapshot"
+      "mcp__alpaca__get_option_snapshot",
+      "Bash(uv sync)",
+      "Bash(uv run pytest tests/test_payoff.py -v)",
+      "Bash(uv run pytest -v)"
     ]
   }
 }

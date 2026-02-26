@@ -6,10 +6,12 @@ from pathlib import Path
 
 import streamlit as st
 
-# Ensure DB is initialized before any page queries
-from magpie.db.connection import get_connection  # noqa: E402
+# Ensure DB is initialized once per Streamlit session
+if "db_initialized" not in st.session_state:
+    from magpie.db.connection import get_connection
 
-get_connection()
+    get_connection()
+    st.session_state.db_initialized = True
 
 st.set_page_config(
     page_title="Magpie Dashboard",

@@ -20,3 +20,5 @@ data/*.duckdb.wal
 uv.lock
 
 settings.local.json
+
+.vscode
