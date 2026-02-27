@@ -10,7 +10,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from magpie.analysis.prompts import (
     PROMPT_VERSION,
@@ -39,7 +39,11 @@ def _get_client():  # type: ignore[return]
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=15),
+    retry=retry_if_not_exception_type(AnthropicKeyMissing),
+)
 def _call_api(model: str, prompt: str) -> str:
     """Call the Claude API and return the raw text response."""
     client = _get_client()

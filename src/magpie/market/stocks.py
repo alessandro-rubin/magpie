@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from alpaca.data.enums import DataFeed
 from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest, StockSnapshotRequest
 from alpaca.data.timeframe import TimeFrame
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -15,7 +16,7 @@ from magpie.market.client import get_stock_data_client
 def get_latest_quote(symbol: str) -> dict:
     """Return the latest bid/ask quote for a symbol."""
     client = get_stock_data_client()
-    request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+    request = StockLatestQuoteRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
     response = client.get_stock_latest_quote(request)
     quote = response[symbol]
     return {
@@ -31,7 +32,7 @@ def get_latest_quote(symbol: str) -> dict:
 def get_snapshot(symbol: str) -> dict:
     """Return a full snapshot (price, volume, VWAP, daily change) for a symbol."""
     client = get_stock_data_client()
-    request = StockSnapshotRequest(symbol_or_symbols=symbol)
+    request = StockSnapshotRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
     response = client.get_stock_snapshot(request)
     snap = response[symbol]
 
@@ -71,6 +72,7 @@ def get_bars(symbol: str, days: int = 30, timeframe: TimeFrame = TimeFrame.Day) 
         start=start,
         end=end,
         limit=days,
+        feed=DataFeed.IEX,
     )
     response = client.get_stock_bars(request)
     bars = response[symbol]
