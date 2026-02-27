@@ -101,6 +101,33 @@ def update_unrealized_pnl(trade_id: str, unrealized_pnl: float) -> None:
     )
 
 
+def build_contract_leg_map(
+    trades: list[TradeJournalEntry],
+) -> dict[str, tuple[str, int]]:
+    """Build a mapping from contract_symbol to (trade_id, leg_index).
+
+    Scans all trades' legs for the ``contract_symbol`` key.
+    """
+    result: dict[str, tuple[str, int]] = {}
+    for trade in trades:
+        if not trade.legs:
+            continue
+        for i, leg in enumerate(trade.legs):
+            cs = leg.get("contract_symbol")
+            if cs:
+                result[cs] = (trade.id, i)
+    return result
+
+
+def update_legs(trade_id: str, legs: list[dict]) -> None:
+    """Update the legs JSON for a trade."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE trade_journal SET legs = ?, updated_at = NOW() WHERE id = ?",
+        [json.dumps(legs), trade_id],
+    )
+
+
 def link_analysis(trade_id: str, analysis_id: str) -> None:
     """Link an LLM analysis to a trade."""
     conn = get_connection()

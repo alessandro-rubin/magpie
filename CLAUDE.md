@@ -37,14 +37,15 @@ src/magpie/
 │   ├── client.py       alpaca-py client factory (TradingClient, DataClients)
 │   ├── stocks.py       Stock price, bars, snapshots
 │   ├── options.py      Option chains, individual snapshots, Greeks
+│   ├── occ.py          OCC option symbol parser (e.g. AAPL260320C00275000)
 │   └── snapshots.py    Assembles full context dict for LLM analysis
 ├── analysis/
 │   ├── prompts.py      Versioned prompt templates — bump PROMPT_VERSION on changes
 │   ├── llm.py          Claude API integration (optional — requires ANTHROPIC_API_KEY)
 │   └── feedback.py     Queries DB → computes win rates → formats for prompt injection
 ├── tracking/
-│   ├── journal.py      CRUD for trade_journal table
-│   ├── positions.py    Sync Alpaca positions → local DB
+│   ├── journal.py      CRUD for trade_journal table + contract leg mapping
+│   ├── positions.py    Sync Alpaca positions → local DB (contract-level matching)
 │   └── pnl.py          Rolling P&L summaries
 ├── execution/
 │   ├── risk.py         Pre-trade checks: position size, daily loss limit
@@ -111,6 +112,10 @@ trade_id = create_trade(
     entry_iv=0.35,
     entry_delta=0.40,
     dte_at_entry=30,
+    legs=[
+        {"contract_symbol": "AAPL260320C00275000", "option_type": "call", "strike_price": 275.0, "quantity": 1, "premium": 5.85, "side": "buy"},
+        {"contract_symbol": "AAPL260320C00285000", "option_type": "call", "strike_price": 285.0, "quantity": -1, "premium": 2.15, "side": "sell"},
+    ],
     entry_rationale="Bullish momentum after earnings beat; rolled up from $270/$280 to match price move.",
 )
 ```
@@ -140,6 +145,43 @@ from magpie.market.snapshots import build_analysis_context
 context = build_analysis_context("AAPL")
 # context contains: underlying price/change, options chain with Greeks, IV metrics
 ```
+
+---
+
+## Positions sync & OCC symbols
+
+### OCC symbol format
+
+`market/occ.py` parses standard OCC option symbols like `AAPL260320C00275000`:
+- Root symbol (1-6 chars) + expiry `YYMMDD` + `C`/`P` + strike×1000 (8 digits)
+
+```python
+from magpie.market.occ import parse_occ, is_occ_symbol
+parsed = parse_occ("AAPL260320C00275000")
+# OCCComponents(underlying="AAPL", expiry=date(2026,3,20), option_type="call", strike=275.0)
+```
+
+### How sync works
+
+`tracking/positions.py:sync_from_alpaca()` reconciles Alpaca positions with `trade_journal`:
+
+1. **Match by contract symbol** — each leg in `trade_journal.legs` has a `contract_symbol` field (OCC symbol). The sync matches these against Alpaca position symbols.
+2. **Aggregate P&L** — unrealized P&L is summed across all legs of a spread into one `trade_journal.unrealized_pnl`.
+3. **Auto-close** — trades whose legs are all gone from Alpaca are marked `status='closed'`.
+4. **Auto-import** — unmatched Alpaca positions are imported as new trades. Options on the same underlying+expiry are grouped into a single spread entry. Strategy type is inferred from leg structure.
+
+### Legs JSON format
+
+Every trade should include `legs` with `contract_symbol` for sync to work:
+
+```json
+[
+  {"contract_symbol": "AAPL260320C00275000", "option_type": "call", "strike_price": 275.0, "quantity": 1, "premium": 5.85, "side": "buy"},
+  {"contract_symbol": "AAPL260320C00285000", "option_type": "call", "strike_price": 285.0, "quantity": -1, "premium": 2.15, "side": "sell"}
+]
+```
+
+Fields: `contract_symbol` (OCC or ticker for stocks), `option_type`, `strike_price`, `quantity` (positive=long, negative=short), `premium`, `side` (`"buy"`/`"sell"`). The `payoff.py` module uses `option_type`, `strike_price`, `quantity`, and `premium`.
 
 ---
 
