@@ -4,7 +4,7 @@ Bump PROMPT_VERSION whenever system or analysis prompts change so that
 prediction accuracy can be tracked per prompt version in the DB.
 """
 
-PROMPT_VERSION = "v1.0"
+PROMPT_VERSION = "v1.1"
 
 # ── System prompt ────────────────────────────────────────────────────────────
 
@@ -26,6 +26,11 @@ For every analysis you must consider:
 3. **Risk/Reward**: Prefer defined-risk strategies. Max loss must be knowable.
 4. **DTE**: Target 30-45 DTE for new positions. Avoid <15 DTE entries.
 5. **Delta**: For directional plays, target 0.30-0.50 delta. Neutral = 0.10-0.20 delta.
+6. **Market Regime**: Consider the overall market environment. In bearish or high-volatility \
+regimes, favor defensive strategies (put spreads, iron condors) and reduce position sizes. In \
+bullish regimes with low/normal volatility, directional bullish strategies have a higher base \
+rate. Always note if your recommendation conflicts with the prevailing regime and explain why \
+the symbol-specific thesis overrides the macro signal.
 
 ## Output format
 ALWAYS respond with valid JSON only — no markdown fences, no explanation outside the JSON.
@@ -83,6 +88,8 @@ Top ATM Puts:
 ## Recent Price History (last 5 days)
 {price_history}
 
+{regime_section}
+
 {feedback_section}
 """
 
@@ -98,6 +105,28 @@ historically lost money on this symbol or with this strategy.
 
 NO_HISTORY_TEXT = "No historical data yet — this is your first analysis. Start building your track record."
 
+# ── Market regime section template ──────────────────────────────────────────
+
+REGIME_TEMPLATE = """\
+## Market Regime & Sentiment
+- VIX: {vix_level} ({vix_source})
+- SPY: ${spy_price} | SMA-50: ${spy_sma_50} | SMA-200: ${spy_sma_200}
+- SPY 20-day momentum: {spy_momentum}
+- SPY put/call ratio: {spy_put_call}
+- Trend regime: **{trend_regime}**
+- Volatility regime: **{volatility_regime}**
+- Composite: **{composite_regime}**
+
+Factor the market regime into your recommendation. If suggesting a directional trade that \
+conflicts with the prevailing trend regime, explain why the symbol-specific thesis overrides \
+the macro signal.\
+"""
+
+NO_REGIME_TEXT = """\
+## Market Regime & Sentiment
+Market regime data unavailable. Proceed with symbol-level analysis only.\
+"""
+
 
 def format_analysis_prompt(
     symbol: str,
@@ -110,6 +139,7 @@ def format_analysis_prompt(
     iv = context.get("iv_metrics", {})
     chain = context.get("options_chain", {})
     history = context.get("price_history_summary", {})
+    regime = context.get("market_regime")
 
     def _pct(v: float | None) -> str:
         return f"{v * 100:+.2f}%" if v is not None else "N/A"
@@ -141,6 +171,9 @@ def format_analysis_prompt(
             )
         return "\n".join(lines) if lines else "  No data"
 
+    # Regime section
+    regime_section = _format_regime_section(regime)
+
     # Feedback section
     if feedback_summary and feedback_summary.get("total_analyses", 0) > 0:
         perf_text = feedback_summary.get("narrative", NO_HISTORY_TEXT)
@@ -167,5 +200,31 @@ def format_analysis_prompt(
         calls_summary=_summarize_contracts(chain.get("calls", [])),
         puts_summary=_summarize_contracts(chain.get("puts", [])),
         price_history=_summarize_bars(history.get("bars_30d", [])),
+        regime_section=regime_section,
         feedback_section=feedback_section,
+    )
+
+
+def _format_regime_section(regime: dict | None) -> str:
+    """Render the market regime section for the analysis prompt."""
+    if not regime:
+        return NO_REGIME_TEXT
+
+    def _val(v: float | None, fmt: str = ".2f") -> str:
+        return f"{v:{fmt}}" if v is not None else "N/A"
+
+    def _pct(v: float | None) -> str:
+        return f"{v * 100:+.2f}%" if v is not None else "N/A"
+
+    return REGIME_TEMPLATE.format(
+        vix_level=_val(regime.get("vix_level")),
+        vix_source=regime.get("vix_source", "N/A"),
+        spy_price=_val(regime.get("spy_price")),
+        spy_sma_50=_val(regime.get("spy_sma_50")),
+        spy_sma_200=_val(regime.get("spy_sma_200")),
+        spy_momentum=_pct(regime.get("spy_momentum_20d")),
+        spy_put_call=_val(regime.get("spy_put_call_ratio"), ".4f"),
+        trend_regime=regime.get("trend_regime", "unknown"),
+        volatility_regime=regime.get("volatility_regime", "unknown"),
+        composite_regime=regime.get("composite_regime", "unknown"),
     )

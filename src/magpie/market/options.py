@@ -54,6 +54,8 @@ def get_option_chain(
         mid = ((bid + ask) / 2) if bid is not None and ask is not None else None
         last = float(latest_trade.price) if latest_trade and latest_trade.price else None
 
+        open_interest = getattr(snapshot, "open_interest", None)
+
         contracts.append({
             "contract_id": contract_symbol,
             "underlying_symbol": symbol,
@@ -69,7 +71,7 @@ def get_option_chain(
             "ask": ask,
             "mid": mid,
             "last_price": last,
-            "open_interest": int(snapshot.open_interest) if snapshot.open_interest else None,
+            "open_interest": int(open_interest) if open_interest else None,
         })
 
     return contracts
@@ -93,13 +95,15 @@ def get_option_snapshot(contract_id: str) -> dict | None:
     bid = float(latest_quote.bid_price) if latest_quote and latest_quote.bid_price else None
     ask = float(latest_quote.ask_price) if latest_quote and latest_quote.ask_price else None
 
+    open_interest = getattr(snapshot, "open_interest", None)
+
     return {
         "contract_id": contract_id,
         "bid": bid,
         "ask": ask,
         "mid": ((bid + ask) / 2) if bid is not None and ask is not None else None,
         "last_price": float(latest_trade.price) if latest_trade and latest_trade.price else None,
-        "open_interest": int(snapshot.open_interest) if snapshot.open_interest else None,
+        "open_interest": int(open_interest) if open_interest else None,
         "implied_volatility": float(snapshot.implied_volatility) if snapshot.implied_volatility else None,
         "delta": float(greeks.delta) if greeks and greeks.delta else None,
         "gamma": float(greeks.gamma) if greeks and greeks.gamma else None,

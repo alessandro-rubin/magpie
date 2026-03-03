@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -13,6 +14,8 @@ from magpie.tracking.journal import (
     update_trade_status,
     update_unrealized_pnl,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def sync_from_alpaca() -> dict:
@@ -70,6 +73,32 @@ def sync_from_alpaca() -> dict:
         else:
             _auto_close(trade.id)
             auto_closed += 1
+
+    # Phase 2.5: Backfill entry Greeks for open trades missing them
+    for trade in open_trades:
+        if trade.entry_delta is not None or not trade.legs:
+            continue
+        greeks = _fetch_spread_greeks(trade.legs)
+        if greeks:
+            from magpie.db.connection import get_connection as _get_conn
+
+            conn = _get_conn()
+            conn.execute(
+                """
+                UPDATE trade_journal
+                SET entry_delta = ?, entry_theta = ?, entry_vega = ?,
+                    entry_gamma = ?, entry_iv = ?, updated_at = NOW()
+                WHERE id = ?
+                """,
+                [
+                    greeks.get("entry_delta"),
+                    greeks.get("entry_theta"),
+                    greeks.get("entry_vega"),
+                    greeks.get("entry_gamma"),
+                    greeks.get("entry_iv"),
+                    trade.id,
+                ],
+            )
 
     # Phase 3: Auto-import unmatched Alpaca positions
     unmatched = {
@@ -160,6 +189,9 @@ def _import_unmatched_positions(unmatched: dict[str, Any]) -> int:
         ref_qty = abs(legs[0]["quantity"]) if legs else 1
         entry_price = abs(net_cost) / (100 * ref_qty) if ref_qty else None
 
+        # Fetch Greeks for the legs at import time
+        greeks_kwargs = _fetch_spread_greeks(legs)
+
         create_trade(
             trade_mode="paper",
             underlying_symbol=underlying,
@@ -172,6 +204,7 @@ def _import_unmatched_positions(unmatched: dict[str, Any]) -> int:
             dte_at_entry=dte,
             legs=legs,
             entry_rationale=f"Auto-imported from Alpaca sync ({len(legs)} leg{'s' if len(legs) != 1 else ''}, {expiry})",
+            **greeks_kwargs,
         )
         count += 1
 
@@ -201,6 +234,66 @@ def _infer_strategy_type(legs: list[dict]) -> str:
         return "iron_condor"
 
     return "multi_leg"
+
+
+def _fetch_spread_greeks(legs: list[dict]) -> dict:
+    """Fetch live Greeks for spread legs and return net spread Greeks.
+
+    Each leg dict must have ``contract_symbol`` and ``quantity`` (positive=long,
+    negative=short).  Raw contract Greeks are multiplied by the sign of quantity
+    so that short legs subtract from the net.
+
+    Returns a dict of kwargs suitable for create_trade() (entry_delta, entry_iv, etc.).
+    Returns empty dict on failure so the import proceeds without Greeks.
+    """
+    try:
+        from magpie.market.options import get_option_snapshot
+
+        net_delta = 0.0
+        net_theta = 0.0
+        net_vega = 0.0
+        net_gamma = 0.0
+        ivs = []
+
+        for leg in legs:
+            symbol = leg.get("contract_symbol")
+            if not symbol:
+                continue
+            qty = leg.get("quantity", 1)
+            sign = 1 if qty > 0 else -1
+
+            snap = get_option_snapshot(symbol)
+            if not snap:
+                continue
+            delta = snap.get("delta") or 0.0
+            theta = snap.get("theta") or 0.0
+            vega = snap.get("vega") or 0.0
+            gamma = snap.get("gamma") or 0.0
+            iv = snap.get("implied_volatility")
+
+            net_delta += delta * sign
+            net_theta += theta * sign
+            net_vega += vega * sign
+            net_gamma += gamma * sign
+            if iv is not None:
+                ivs.append(iv)
+
+        result = {}
+        if net_delta != 0.0:
+            result["entry_delta"] = round(net_delta, 4)
+        if net_theta != 0.0:
+            result["entry_theta"] = round(net_theta, 4)
+        if net_vega != 0.0:
+            result["entry_vega"] = round(net_vega, 4)
+        if net_gamma != 0.0:
+            result["entry_gamma"] = round(net_gamma, 4)
+        if ivs:
+            result["entry_iv"] = round(sum(ivs) / len(ivs), 4)
+
+        return result
+    except Exception:
+        logger.warning("Could not fetch Greeks during auto-import", exc_info=True)
+        return {}
 
 
 def sync_portfolio_snapshot() -> None:

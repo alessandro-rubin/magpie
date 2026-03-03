@@ -42,7 +42,8 @@ src/magpie/
 ├── analysis/
 │   ├── prompts.py      Versioned prompt templates — bump PROMPT_VERSION on changes
 │   ├── llm.py          Claude API integration (optional — requires ANTHROPIC_API_KEY)
-│   └── feedback.py     Queries DB → computes win rates → formats for prompt injection
+│   ├── feedback.py     Queries DB → computes win rates → formats for prompt injection
+│   └── regime.py       Market regime: VIX (Yahoo Finance), SPY trend, classification
 ├── tracking/
 │   ├── journal.py      CRUD for trade_journal table + contract leg mapping
 │   ├── positions.py    Sync Alpaca positions → local DB (contract-level matching)
@@ -77,6 +78,7 @@ Key tables and their purpose:
 | `option_snapshots` | Append-only IV/Greeks history per contract |
 | `prediction_accuracy` | Rolled-up win rate by symbol/strategy/prompt version |
 | `portfolio_snapshots` | Daily equity curve |
+| `market_regime_snapshots` | Daily market regime (VIX, SPY trend, classification) |
 | `watchlist` | Symbols to scan |
 
 Run ad-hoc queries:
@@ -167,8 +169,9 @@ parsed = parse_occ("AAPL260320C00275000")
 
 1. **Match by contract symbol** — each leg in `trade_journal.legs` has a `contract_symbol` field (OCC symbol). The sync matches these against Alpaca position symbols.
 2. **Aggregate P&L** — unrealized P&L is summed across all legs of a spread into one `trade_journal.unrealized_pnl`.
-3. **Auto-close** — trades whose legs are all gone from Alpaca are marked `status='closed'`.
-4. **Auto-import** — unmatched Alpaca positions are imported as new trades. Options on the same underlying+expiry are grouped into a single spread entry. Strategy type is inferred from leg structure.
+3. **Backfill Greeks** — open trades missing `entry_delta` get live Greeks fetched from Alpaca and stored. Net spread Greeks are computed sign-aware (long legs add, short legs subtract).
+4. **Auto-close** — trades whose legs are all gone from Alpaca are marked `status='closed'`.
+5. **Auto-import** — unmatched Alpaca positions are imported as new trades. Options on the same underlying+expiry are grouped into a single spread entry. Strategy type is inferred from leg structure. Greeks are fetched at import time via `_fetch_spread_greeks()`.
 
 ### Legs JSON format
 
@@ -182,6 +185,25 @@ Every trade should include `legs` with `contract_symbol` for sync to work:
 ```
 
 Fields: `contract_symbol` (OCC or ticker for stocks), `option_type`, `strike_price`, `quantity` (positive=long, negative=short), `premium`, `side` (`"buy"`/`"sell"`). The `payoff.py` module uses `option_type`, `strike_price`, `quantity`, and `premium`.
+
+---
+
+## Greeks on trades
+
+`trade_journal` stores net spread Greeks at entry time: `entry_delta`, `entry_theta`, `entry_vega`, `entry_gamma`, `entry_iv`.
+
+**Sign convention:** net spread Greeks are computed **sign-aware** — long legs (positive quantity) add their raw Greeks, short legs (negative quantity) subtract. This means:
+- A bull call spread with long delta 0.21 and short delta 0.07 stores `entry_delta = 0.14` (not 0.28)
+- A bear put spread with long delta -0.55 and short delta -0.39 stores `entry_delta = -0.16`
+
+The dashboard exposure formula is `entry_delta * quantity * 100` (per-lot net delta × number of lots × multiplier).
+
+Greeks are populated:
+- At **auto-import** time (`_fetch_spread_greeks()` in `positions.py`)
+- During **sync backfill** (Phase 2.5) for any open trade with NULL `entry_delta`
+- Manually via `create_trade(entry_delta=..., ...)` kwargs
+
+If Greeks can't be fetched (market closed, API error), the trade is still created — Greeks are just NULL and will be backfilled on the next sync.
 
 ---
 
@@ -211,6 +233,41 @@ After each trade closes, call `mark_prediction_outcome(analysis_id, was_correct)
 
 ---
 
+## Market regime
+
+`analysis/regime.py` classifies the current market environment so the LLM sees the macro picture alongside symbol-specific data.
+
+### Data sources
+
+| Signal | Source | Fallback |
+|---|---|---|
+| VIX level | Yahoo Finance chart API (free, no auth) | SPY 20-day realized vol |
+| SPY trend | Alpaca bars (SMA-50, SMA-200, 20d momentum) | Fewer signals if bars insufficient |
+| Put/call ratio | SPY options chain open interest | None (skipped) |
+
+### Classification
+
+**Trend regime** — score-based: SPY > SMA-50 (+1/-1), SPY > SMA-200 (+1/-1), 20d momentum > +1% (+1) or < -1% (-1). Score ≥2 = bullish, ≤-2 = bearish, else neutral.
+
+**Volatility regime** — VIX < 15 = low, 15-25 = normal, > 25 = high.
+
+**Composite** — `"{trend}_{vol}_vol"`, e.g. `bearish_normal_vol`.
+
+### How it integrates
+
+`build_analysis_context()` calls `get_market_regime()` and adds a `market_regime` key to the context dict. The prompt template renders it as a `## Market Regime & Sentiment` section. The system prompt instructs the LLM to factor regime into recommendations and explain if a directional trade conflicts with the macro signal.
+
+Daily regime snapshots are saved to `market_regime_snapshots` table for historical tracking.
+
+```python
+from magpie.analysis.regime import get_market_regime, save_regime_snapshot
+regime = get_market_regime()
+# {'trend_regime': 'bearish', 'volatility_regime': 'normal', 'vix_level': 22.7, ...}
+save_regime_snapshot(regime)
+```
+
+---
+
 ## Risk controls
 
 Configured in `.env`:
@@ -227,7 +284,7 @@ The `execution/review.py` confirmation panel shows risk check results.
 
 ## Prompt versioning
 
-`analysis/prompts.py` contains `PROMPT_VERSION = "v1.0"`. Bump this whenever the system prompt or analysis template changes. This allows you to compare prediction accuracy before and after prompt changes using:
+`analysis/prompts.py` contains `PROMPT_VERSION = "v1.1"`. Bump this whenever the system prompt or analysis template changes. This allows you to compare prediction accuracy before and after prompt changes using:
 
 ```sql
 SELECT prompt_version, AVG(CASE WHEN was_correct THEN 1.0 ELSE 0.0 END) as win_rate
@@ -253,7 +310,7 @@ Four pages:
 |---|---|---|
 | Equity & Drawdown | `portfolio_snapshots` | Equity line, drawdown %, daily P&L bars |
 | Payoff Diagrams | `trade_journal.legs` JSON | P&L at expiry with breakevens, per-leg overlay |
-| Greeks Dashboard | `trade_journal` + `option_snapshots` | Portfolio Greeks exposure, IV history, per-contract Greeks |
+| Greeks Dashboard | `trade_journal` (entry Greeks from sync) + `option_snapshots` | Portfolio Greeks exposure, IV history, per-contract Greeks |
 | Win Rates | `trade_journal` + `llm_analyses` | Win rate by strategy/symbol/prompt, rolling win rate, P&L histogram |
 
 All queries live in `dashboard/data.py` with `@st.cache_data(ttl=60)`. Payoff math is in `dashboard/payoff.py` (pure functions, unit tested). Each page handles empty data gracefully.

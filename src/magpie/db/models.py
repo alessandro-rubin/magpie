@@ -125,6 +125,22 @@ class PortfolioSnapshot:
 
 
 @dataclass
+class MarketRegimeSnapshot:
+    snapshot_date: date
+    trend_regime: str               # 'bullish' | 'neutral' | 'bearish'
+    volatility_regime: str          # 'low' | 'normal' | 'high'
+    composite_regime: str           # e.g. 'bullish_low_vol'
+    vix_level: float | None = None
+    vix_source: str | None = None
+    spy_price: float | None = None
+    spy_sma_50: float | None = None
+    spy_sma_200: float | None = None
+    spy_momentum_20d: float | None = None
+    spy_put_call_ratio: float | None = None
+    created_at: datetime | None = None
+
+
+@dataclass
 class WatchlistEntry:
     symbol: str
     added_at: datetime | None = None

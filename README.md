@@ -79,7 +79,7 @@ uv run magpie positions                       # Show all open positions from jou
 uv run magpie positions --sync                # Sync from Alpaca first, then display
 ```
 
-The `--sync` flag pulls live data from Alpaca, updates unrealized P&L, and auto-closes positions that no longer exist on Alpaca's side.
+The `--sync` flag pulls live data from Alpaca, updates unrealized P&L, backfills Greeks (delta, theta, vega, gamma, IV) on trades missing them, and auto-closes positions that no longer exist on Alpaca's side.
 
 ### `magpie report` — P&L + LLM Accuracy
 
@@ -126,6 +126,12 @@ uv run python scripts/morning_scan.py
    INSERT INTO watchlist (symbol) VALUES ('AAPL'), ('SPY');
 
 2. Run morning scan or use Claude Code interactively via Alpaca MCP
+   Each analysis automatically fetches market regime context:
+   - VIX level (Yahoo Finance, with realized-vol fallback)
+   - SPY trend (price vs SMA-50/200, 20-day momentum)
+   - SPY put/call ratio
+   - Composite classification (e.g. bullish_low_vol, bearish_high_vol)
+   The regime is saved daily and injected into the LLM prompt.
 
 3. Review recommendations in the trade journal
    uv run magpie journal list
@@ -136,9 +142,14 @@ uv run python scripts/morning_scan.py
 
 5. Sync positions during the day
    uv run python scripts/sync_positions.py
+   - Updates unrealized P&L from Alpaca
+   - Backfills Greeks (delta, theta, vega, gamma, IV) on any open trade missing them
+   - Auto-imports new Alpaca positions with Greeks fetched at import time
+   - Auto-closes trades whose positions no longer exist on Alpaca
 
-6. View performance
-   uv run magpie report
+6. View performance and Greeks exposure
+   uv run magpie report              # P&L and win rates
+   uv run magpie dashboard           # Streamlit UI with Greeks charts
 ```
 
 ---
@@ -150,10 +161,11 @@ src/magpie/
 ├── config.py           Settings from .env (pydantic-settings)
 ├── db/                 DuckDB connection, migrations, dataclass models
 ├── market/             Alpaca-py wrappers (stocks, options, context assembly)
-├── analysis/           LLM prompts, feedback loop, accuracy tracking
-├── tracking/           Trade journal, position sync, P&L calculations
+├── analysis/           LLM prompts, feedback loop, market regime, accuracy tracking
+├── tracking/           Trade journal, position sync (with Greeks), P&L calculations
 ├── execution/          Risk checks, human review gate, order placement
-└── cli/                Typer commands: analyze, journal, positions, report
+├── dashboard/          Streamlit UI: equity, payoff, Greeks exposure, win rates
+└── cli/                Typer commands: analyze, journal, positions, report, dashboard
 
 scripts/
 ├── sync_positions.py   Cron: sync Alpaca positions into DB
@@ -175,6 +187,7 @@ Key tables:
 - `option_snapshots` — IV and Greeks history for options contracts
 - `prediction_accuracy` — rolling win rate by symbol, strategy, prompt version
 - `portfolio_snapshots` — daily equity curve
+- `market_regime_snapshots` — daily market regime (VIX, SPY trend, composite classification)
 - `watchlist` — symbols to scan
 
 Query the database directly:
@@ -217,3 +230,5 @@ uv run pytest
 - The feedback loop improves over time: each closed trade updates `prediction_accuracy`, which is injected into future LLM prompts.
 - Prompt versions are tracked in `llm_analyses.prompt_version` so you can measure the impact of prompt changes on accuracy.
 - Every trade can store `entry_rationale` and `exit_rationale` — free-text reasoning captured at decision time. This powers retrospective analysis: review *why* a trade was made, not just *what* happened.
+- Position sync fetches live Greeks from Alpaca and stores net spread Greeks (sign-aware: long legs add, short legs subtract) on `trade_journal`. The Greeks dashboard uses these to show portfolio-level exposure.
+- Every analysis includes a market regime section (VIX level, SPY trend, put/call ratio) so the LLM sees the macro picture. Regime is classified as bullish/neutral/bearish + low/normal/high vol. VIX is fetched from Yahoo Finance with a realized-vol fallback.

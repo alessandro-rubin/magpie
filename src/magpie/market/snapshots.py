@@ -55,6 +55,15 @@ def build_analysis_context(symbol: str) -> dict:
     avg_iv = sum(ivs) / len(ivs) if ivs else None
     iv_rank = _compute_iv_rank(symbol, avg_iv)
 
+    # ── Market regime ──────────────────────────────────────────────────────
+    try:
+        from magpie.analysis.regime import get_market_regime, save_regime_snapshot
+
+        regime = get_market_regime()
+        save_regime_snapshot(regime)
+    except Exception:
+        regime = None
+
     return {
         "symbol": symbol,
         "underlying": underlying,
@@ -71,6 +80,7 @@ def build_analysis_context(symbol: str) -> dict:
             "bars_30d": bars_30d[-5:],  # last 5 days for context
             "sma_20": sma_20,
         },
+        "market_regime": regime,
     }
 
 
