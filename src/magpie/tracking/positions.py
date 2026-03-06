@@ -51,7 +51,7 @@ def sync_from_alpaca() -> dict:
                 matched_contracts.add(trade.underlying_symbol)
                 updated += 1
             else:
-                _auto_close(trade.id)
+                _auto_close(trade)
                 auto_closed += 1
             continue
 
@@ -71,7 +71,7 @@ def sync_from_alpaca() -> dict:
             update_unrealized_pnl(trade.id, trade_pnl[trade.id])
             updated += 1
         else:
-            _auto_close(trade.id)
+            _auto_close(trade)
             auto_closed += 1
 
     # Phase 2.5: Backfill entry Greeks for open trades missing them
@@ -111,13 +111,31 @@ def sync_from_alpaca() -> dict:
     return {"updated": updated, "auto_closed": auto_closed, "imported": imported}
 
 
-def _auto_close(trade_id: str) -> None:
-    """Mark a trade as closed when its positions are no longer in Alpaca."""
+def _auto_close(trade: Any) -> None:
+    """Mark a trade as closed when its positions are no longer in Alpaca.
+
+    Computes realized P&L from the last synced unrealized_pnl.
+    """
+    realized_pnl = None
+    realized_pnl_pct = None
+    exit_price = None
+
+    if trade.unrealized_pnl is not None:
+        realized_pnl = trade.unrealized_pnl
+        if trade.entry_price and trade.quantity:
+            cost = trade.entry_price * trade.quantity * 100
+            if cost != 0:
+                realized_pnl_pct = realized_pnl / cost
+            exit_price = trade.entry_price + realized_pnl / (trade.quantity * 100)
+
     update_trade_status(
-        trade_id,
+        trade.id,
         status="closed",
         exit_time=datetime.now(timezone.utc),
         exit_reason="auto_detected_close",
+        exit_price=exit_price,
+        realized_pnl=realized_pnl,
+        realized_pnl_pct=realized_pnl_pct,
     )
 
 
