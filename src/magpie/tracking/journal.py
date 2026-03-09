@@ -53,7 +53,7 @@ def create_trade(
         [
             trade_id, now, now, trade_mode, status,
             underlying_symbol.upper(), asset_class, kwargs.get("strategy_type"),
-            kwargs.get("entry_time"), kwargs.get("entry_price"), quantity,
+            kwargs.get("entry_time", now), kwargs.get("entry_price"), quantity,
             kwargs.get("entry_commission", 0.0), legs_json,
             kwargs.get("entry_iv"), kwargs.get("entry_delta"),
             kwargs.get("entry_theta"), kwargs.get("entry_vega"), kwargs.get("entry_gamma"),
