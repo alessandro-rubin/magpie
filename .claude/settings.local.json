@@ -13,7 +13,15 @@
       "mcp__alpaca__get_option_snapshot",
       "Bash(uv sync)",
       "Bash(uv run pytest tests/test_payoff.py -v)",
-      "Bash(uv run pytest -v)"
+      "Bash(uv run pytest -v)",
+      "Bash(uv run python -c \":*)",
+      "mcp__alpaca__get_stock_latest_quote",
+      "Bash(uv run:*)",
+      "mcp__alpaca__place_option_order",
+      "Bash(tasklist)",
+      "mcp__alpaca__close_position",
+      "WebSearch",
+      "Bash(wc -l tests/*.py)"
     ]
   }
 }

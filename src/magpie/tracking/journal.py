@@ -137,6 +137,43 @@ def link_analysis(trade_id: str, analysis_id: str) -> None:
     )
 
 
+def find_linked_analyses(trade_id: str) -> list[dict]:
+    """Find all llm_analyses linked to a trade."""
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT id, was_correct, underlying_symbol, strategy_suggested
+        FROM llm_analyses
+        WHERE linked_trade_id = ?
+        """,
+        [trade_id],
+    ).fetchall()
+    return [
+        {"id": r[0], "was_correct": r[1], "symbol": r[2], "strategy": r[3]}
+        for r in rows
+    ]
+
+
+def find_unlinked_analysis(symbol: str) -> str | None:
+    """Find the most recent unlinked analysis for a symbol.
+
+    Useful for auto-linking trades created via MCP to their originating analysis.
+    """
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT id FROM llm_analyses
+        WHERE underlying_symbol = ?
+          AND linked_trade_id IS NULL
+          AND created_at >= NOW() - INTERVAL 7 DAY
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        [symbol.upper()],
+    ).fetchall()
+    return rows[0][0] if rows else None
+
+
 def list_trades(
     status: str | None = None,
     symbol: str | None = None,

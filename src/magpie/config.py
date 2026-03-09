@@ -38,6 +38,17 @@ class Settings(BaseSettings):
         0.02, ge=0.001, le=1.0, description="Max daily loss as fraction of equity"
     )
 
+    # Position management thresholds
+    magpie_profit_target_pct: float = Field(
+        0.50, ge=0.1, le=1.0, description="Close at this fraction of max profit (default 50%)"
+    )
+    magpie_stop_loss_pct: float = Field(
+        1.0, ge=0.1, le=2.0, description="Close at this fraction of max loss (default 100%)"
+    )
+    magpie_min_dte_close: int = Field(
+        3, ge=0, le=10, description="Close positions with DTE at or below this (gamma risk)"
+    )
+
 
 def _load_settings() -> Settings:
     try:

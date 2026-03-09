@@ -72,14 +72,19 @@ uv run magpie journal list --limit 50         # Change row limit (default 20)
 uv run magpie journal show <trade-id>         # Full detail on a trade (ID prefix works)
 ```
 
-### `magpie positions` — Live Position View
+### `magpie positions` — Live Position View & Management
 
 ```bash
 uv run magpie positions                       # Show all open positions from journal
 uv run magpie positions --sync                # Sync from Alpaca first, then display
+uv run magpie positions sync                  # Sync positions + save portfolio snapshot
+uv run magpie positions manage                # Dry-run: check profit/stop/DTE targets
+uv run magpie positions manage --execute      # Close positions hitting targets (journal-side)
 ```
 
-The `--sync` flag pulls live data from Alpaca, updates unrealized P&L, backfills Greeks (delta, theta, vega, gamma, IV) on trades missing them, and auto-closes positions that no longer exist on Alpaca's side.
+The `--sync` flag pulls live data from Alpaca, updates unrealized P&L, backfills Greeks (delta, theta, vega, gamma, IV) on trades missing them, and auto-closes positions that no longer exist on Alpaca's side. Auto-closed trades automatically mark linked LLM analysis outcomes.
+
+The `manage` subcommand scans open positions against configurable thresholds (default: 50% profit target, 100% stop loss, 3 DTE minimum).
 
 ### `magpie report` — P&L + LLM Accuracy
 
@@ -115,6 +120,10 @@ uv run python scripts/sync_positions.py
 
 # Run analysis on all watchlist symbols
 uv run python scripts/morning_scan.py
+
+# Scan positions for profit/stop/DTE targets (dry-run by default)
+uv run python scripts/manage_positions.py
+uv run python scripts/manage_positions.py --execute   # actually close
 ```
 
 ---
@@ -132,6 +141,7 @@ uv run python scripts/morning_scan.py
    - SPY put/call ratio
    - Composite classification (e.g. bullish_low_vol, bearish_high_vol)
    The regime is saved daily and injected into the LLM prompt.
+   Past trade performance is also injected (win rates, avg P&L by strategy/symbol).
 
 3. Review recommendations in the trade journal
    uv run magpie journal list
@@ -146,10 +156,21 @@ uv run python scripts/morning_scan.py
    - Backfills Greeks (delta, theta, vega, gamma, IV) on any open trade missing them
    - Auto-imports new Alpaca positions with Greeks fetched at import time
    - Auto-closes trades whose positions no longer exist on Alpaca
+   - Auto-marks linked LLM analysis outcomes (was_correct) on close
 
-6. View performance and Greeks exposure
+6. Manage positions automatically
+   uv run magpie positions manage --execute
+   - Closes positions hitting profit target (default 50% of max profit)
+   - Closes positions hitting stop loss (default 100% of max loss)
+   - Closes positions with low DTE (default ≤3 days, gamma risk)
+   - Records exit reason, realized P&L, and marks analysis outcomes
+
+7. View performance and Greeks exposure
    uv run magpie report              # P&L and win rates
    uv run magpie dashboard           # Streamlit UI with Greeks charts
+
+   The feedback loop closes automatically:
+   trade outcomes → performance stats → injected into next LLM prompt
 ```
 
 ---
@@ -168,8 +189,10 @@ src/magpie/
 └── cli/                Typer commands: analyze, journal, positions, report, dashboard
 
 scripts/
-├── sync_positions.py   Cron: sync Alpaca positions into DB
-└── morning_scan.py     Cron: run analysis on watchlist
+├── sync_positions.py       Cron: sync Alpaca positions into DB
+├── morning_scan.py         Cron: run analysis on watchlist
+├── manage_positions.py     Cron: check profit/stop/DTE targets
+└── monday_close_losers.py  Cron: close losing positions before Monday expiry
 
 data/
 └── magpie.duckdb       Local database (gitignored)
@@ -227,7 +250,8 @@ uv run pytest
 ## Notes
 
 - All trading defaults to **paper mode**. Set `ALPACA_PAPER=true` in `.env`.
-- The feedback loop improves over time: each closed trade updates `prediction_accuracy`, which is injected into future LLM prompts.
+- The feedback loop improves over time: each closed trade updates performance stats (win rates, avg P&L by strategy/symbol), which are injected into future LLM prompts. This works even without `llm_analyses` records — trade journal data alone is sufficient.
+- When trades are auto-closed during sync, linked LLM analyses are automatically marked with outcomes (`was_correct`), and the `prediction_accuracy` rollup is refreshed.
 - Prompt versions are tracked in `llm_analyses.prompt_version` so you can measure the impact of prompt changes on accuracy.
 - Every trade can store `entry_rationale` and `exit_rationale` — free-text reasoning captured at decision time. This powers retrospective analysis: review *why* a trade was made, not just *what* happened.
 - Position sync fetches live Greeks from Alpaca and stores net spread Greeks (sign-aware: long legs add, short legs subtract) on `trade_journal`. The Greeks dashboard uses these to show portfolio-level exposure.

@@ -136,8 +136,19 @@ update_trade_status(
     exit_rationale="Spread hit 80% of max profit with 10 DTE remaining; closing to lock in gains.",
 )
 
+# Mark linked LLM analysis outcome (auto-done during sync auto-close)
 from magpie.analysis.llm import mark_outcome
 mark_outcome(analysis_id, was_correct=True)
+```
+
+### Auto-linking analyses to trades
+
+```python
+from magpie.tracking.journal import find_unlinked_analysis, link_analysis
+# Find most recent unlinked analysis for a symbol
+analysis_id = find_unlinked_analysis("AAPL")
+if analysis_id:
+    link_analysis(analysis_id, trade_id)
 ```
 
 ### Building market context for analysis
@@ -170,7 +181,7 @@ parsed = parse_occ("AAPL260320C00275000")
 1. **Match by contract symbol** — each leg in `trade_journal.legs` has a `contract_symbol` field (OCC symbol). The sync matches these against Alpaca position symbols.
 2. **Aggregate P&L** — unrealized P&L is summed across all legs of a spread into one `trade_journal.unrealized_pnl`.
 3. **Backfill Greeks** — open trades missing `entry_delta` get live Greeks fetched from Alpaca and stored. Net spread Greeks are computed sign-aware (long legs add, short legs subtract).
-4. **Auto-close** — trades whose legs are all gone from Alpaca are marked `status='closed'`.
+4. **Auto-close** — trades whose legs are all gone from Alpaca are marked `status='closed'`. Realized P&L is computed from the last synced `unrealized_pnl`. Any linked LLM analyses are automatically marked with outcomes (see Feedback loop section).
 5. **Auto-import** — unmatched Alpaca positions are imported as new trades. Options on the same underlying+expiry are grouped into a single spread entry. Strategy type is inferred from leg structure. Greeks are fetched at import time via `_fetch_spread_greeks()`.
 
 ### Legs JSON format
@@ -224,12 +235,23 @@ For LLM-driven trades, `llm_analyses.reasoning_summary` captures the model's rea
 
 The self-correction mechanism lives in `src/magpie/analysis/feedback.py`.
 
-Every LLM prompt receives a paragraph like:
-> "In the last 30 days: 8/12 vertical spread calls were profitable (avg +22% return). Straddle entries within 48h of earnings: 2/8 profitable — avoid."
+Every LLM prompt receives a performance summary injected via `get_combined_feedback()`, which merges two data sources:
 
-This is computed from `llm_analyses` joined with `trade_journal` via `compute_accuracy_stats()`.
+1. **Trade journal performance** (`compute_trade_performance()`) — win rates, avg P&L, per-symbol and per-strategy stats computed directly from `trade_journal`. Works without any `llm_analyses` records, so the feedback loop functions even when trades are placed interactively via Claude Code + MCP.
 
-After each trade closes, call `mark_prediction_outcome(analysis_id, was_correct)` to close the loop.
+2. **LLM prediction accuracy** (`compute_accuracy_stats()`) — win rates from `llm_analyses` joined with `trade_journal`. Only populated when trades are linked to LLM analyses.
+
+Example injected text:
+> "In the last 30 days: 3 trades closed, 1 win / 2 losses (33% win rate, avg return -42%). Vertical spreads: 1/2 profitable. AAPL: 0/1 — avoid repeating."
+
+### Outcome marking
+
+When a trade is auto-closed during sync (legs gone from Alpaca), `_mark_analysis_outcomes()` in `positions.py` automatically:
+- Finds all linked `llm_analyses` records via `find_linked_analyses(trade_id)`
+- Marks each as `was_correct=True` (positive P&L) or `was_correct=False` (negative P&L)
+- Refreshes the `prediction_accuracy` rollup table
+
+For manual closes, call `mark_outcome(analysis_id, was_correct)` from `analysis/llm.py`.
 
 ---
 
@@ -265,6 +287,37 @@ regime = get_market_regime()
 # {'trend_regime': 'bearish', 'volatility_regime': 'normal', 'vix_level': 22.7, ...}
 save_regime_snapshot(regime)
 ```
+
+---
+
+## Position management
+
+Automated scanning of open positions for profit targets, stop losses, and DTE limits.
+
+Configured in `.env` (defaults shown):
+
+```ini
+MAGPIE_PROFIT_TARGET_PCT=0.50  # close at 50% of max profit
+MAGPIE_STOP_LOSS_PCT=1.0       # close at 100% of max loss
+MAGPIE_MIN_DTE_CLOSE=3         # close when DTE <= 3 (gamma risk)
+```
+
+**CLI:**
+
+```bash
+uv run magpie positions manage              # dry-run: show what would be closed
+uv run magpie positions manage --execute    # actually close (journal only — close Alpaca separately)
+uv run magpie positions manage --no-sync    # skip Alpaca sync before scanning
+```
+
+**Script (for scheduling):**
+
+```bash
+uv run python scripts/manage_positions.py              # dry-run
+uv run python scripts/manage_positions.py --execute     # close positions
+```
+
+When `--execute` is used, each closed trade records `exit_reason` (`target_hit`, `stop_loss`, or `low_dte`), computes `realized_pnl` from the last synced unrealized P&L, and marks linked LLM analysis outcomes.
 
 ---
 
@@ -322,11 +375,17 @@ All queries live in `dashboard/data.py` with `@st.cache_data(ttl=60)`. Payoff ma
 Run on a schedule during trading hours:
 
 ```bash
-# Every 15 minutes during market hours
+# Every 15 minutes during market hours — sync positions, update P&L, auto-close
 uv run python scripts/sync_positions.py
 
-# Once per day at ~9:45 AM ET
+# Once per day at ~9:45 AM ET — analyze watchlist symbols
 uv run python scripts/morning_scan.py
+
+# Every 30 minutes or at market close — check profit/stop/DTE targets
+uv run python scripts/manage_positions.py
+
+# Once per day near market close — auto-close positions hitting Monday expiry risk
+uv run python scripts/monday_close_losers.py
 ```
 
 ---
@@ -348,3 +407,19 @@ uv run ruff format .   # format
 ```
 
 Tests use an in-memory DuckDB fixture (`tests/conftest.py`) — no real API calls.
+
+---
+
+## Roadmap / TODOs
+
+### Medium priority
+
+- **Slippage tracking** — compare `entry_price` on journal to actual Alpaca fill price. Add `fill_price` column to `trade_journal`, compute slippage at sync time. Useful to measure execution quality.
+- **Regime snapshot at analysis time** — store the `market_regime` dict in `llm_analyses.context_snapshot` so retrospective analysis can see what regime the LLM saw when it made the recommendation.
+- **Trade timeline / decision audit page** — new dashboard page showing a timeline per trade: analysis → entry → P&L updates → exit, with rationale at each step. Data already exists across `llm_analyses` + `trade_journal`.
+
+### Low priority
+
+- **Watchlist CLI management** — `magpie watchlist add/remove/list` commands. Table exists, just needs CLI wiring.
+- **Prompt A/B testing infrastructure** — run two prompt versions in parallel on the same symbols, compare outcomes. Requires splitting `PROMPT_VERSION` into concurrent tracks.
+- **Test coverage gaps** — add tests for LLM response parsing edge cases (`_parse_response` in `llm.py`) and risk check logic (`execution/risk.py`).

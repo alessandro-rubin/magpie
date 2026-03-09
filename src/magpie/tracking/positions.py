@@ -10,6 +10,7 @@ from magpie.market.client import get_trading_client
 from magpie.market.occ import is_occ_symbol, parse_occ
 from magpie.tracking.journal import (
     create_trade,
+    find_linked_analyses,
     list_trades,
     update_trade_status,
     update_unrealized_pnl,
@@ -115,6 +116,7 @@ def _auto_close(trade: Any) -> None:
     """Mark a trade as closed when its positions are no longer in Alpaca.
 
     Computes realized P&L from the last synced unrealized_pnl.
+    After closing, marks any linked LLM analyses with the outcome.
     """
     realized_pnl = None
     realized_pnl_pct = None
@@ -137,6 +139,48 @@ def _auto_close(trade: Any) -> None:
         realized_pnl=realized_pnl,
         realized_pnl_pct=realized_pnl_pct,
     )
+
+    # Close the feedback loop: mark linked analyses with outcome
+    _mark_analysis_outcomes(trade.id, realized_pnl)
+
+
+def _mark_analysis_outcomes(trade_id: str, realized_pnl: float | None) -> None:
+    """Mark all LLM analyses linked to a trade with their outcome.
+
+    Also refreshes the prediction_accuracy stats.
+    """
+    linked = find_linked_analyses(trade_id)
+    if not linked:
+        return
+
+    was_correct = realized_pnl is not None and realized_pnl > 0
+    pnl_str = f"${realized_pnl:+,.0f}" if realized_pnl is not None else "unknown"
+
+    try:
+        from magpie.analysis.llm import mark_outcome
+
+        for analysis in linked:
+            if analysis["was_correct"] is not None:
+                continue  # Already marked
+            mark_outcome(
+                analysis["id"],
+                was_correct=was_correct,
+                notes=f"Auto-marked on position close. Realized P&L: {pnl_str}",
+            )
+            logger.info(
+                "Marked analysis %s outcome: was_correct=%s (P&L: %s)",
+                analysis["id"][:8], was_correct, pnl_str,
+            )
+    except Exception:
+        logger.warning("Failed to mark analysis outcomes for trade %s", trade_id, exc_info=True)
+
+    # Refresh prediction accuracy stats
+    try:
+        from magpie.analysis.feedback import upsert_prediction_accuracy
+
+        upsert_prediction_accuracy(window_days=30)
+    except Exception:
+        logger.warning("Failed to refresh prediction accuracy", exc_info=True)
 
 
 def _import_unmatched_positions(unmatched: dict[str, Any]) -> int:

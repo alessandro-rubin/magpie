@@ -76,10 +76,9 @@ def build_prompt(symbol: str, context: dict) -> str:
     Use this when ANTHROPIC_API_KEY is not set — print the output and
     paste it into Claude Code for interactive analysis.
     """
-    from magpie.analysis.feedback import compute_accuracy_stats, format_feedback_for_prompt
+    from magpie.analysis.feedback import get_combined_feedback
 
-    feedback_raw = compute_accuracy_stats(symbol=symbol, window_days=30)
-    feedback_summary = format_feedback_for_prompt(feedback_raw) if feedback_raw else {}
+    feedback_summary = get_combined_feedback(symbol=symbol, window_days=30)
 
     return format_analysis_prompt(
         symbol=symbol,
@@ -99,11 +98,10 @@ def run_analysis(
     Raises AnthropicKeyMissing if ANTHROPIC_API_KEY is not configured.
     In that case, use build_prompt() to get the prompt text for manual use.
     """
-    from magpie.analysis.feedback import compute_accuracy_stats, format_feedback_for_prompt
+    from magpie.analysis.feedback import get_combined_feedback
     from magpie.config import settings
 
-    feedback_raw = compute_accuracy_stats(symbol=symbol, window_days=30)
-    feedback_summary = format_feedback_for_prompt(feedback_raw) if feedback_raw else {}
+    feedback_summary = get_combined_feedback(symbol=symbol, window_days=30)
 
     prompt = format_analysis_prompt(
         symbol=symbol,
