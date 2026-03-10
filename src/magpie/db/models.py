@@ -141,6 +141,17 @@ class MarketRegimeSnapshot:
 
 
 @dataclass
+class TradingRule:
+    id: str
+    category: str                           # 'sizing' | 'risk' | 'entry' | 'macro' | 'execution'
+    rule: str
+    source_trade_id: str | None = None
+    active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass
 class WatchlistEntry:
     symbol: str
     added_at: datetime | None = None

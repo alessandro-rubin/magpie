@@ -175,8 +175,8 @@ def format_analysis_prompt(
     regime_section = _format_regime_section(regime)
 
     # Feedback section
-    if feedback_summary and feedback_summary.get("total_analyses", 0) > 0:
-        perf_text = feedback_summary.get("narrative", NO_HISTORY_TEXT)
+    if feedback_summary and feedback_summary.get("narrative"):
+        perf_text = feedback_summary["narrative"]
         feedback_section = FEEDBACK_TEMPLATE.format(
             symbol=symbol,
             window_days=window_days,

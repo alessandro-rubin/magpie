@@ -8,9 +8,11 @@ Primary goal: paper trade options strategies, measure prediction accuracy, itera
 
 ---
 
-## Alpaca MCP Server
+## MCP Servers
 
-This project has `.mcp.json` configured. When the MCP server is active, you can:
+This project has two MCP servers configured in `.mcp.json`:
+
+### Alpaca MCP Server (market data & orders)
 
 - Check paper account balance and buying power
 - View open positions and P&L
@@ -20,7 +22,27 @@ This project has `.mcp.json` configured. When the MCP server is active, you can:
 
 **Always use paper mode.** `ALPACA_PAPER=true` must be set in `.env`.
 
-Verify the MCP is working: ask "what is my Alpaca paper account balance?"
+### Magpie MCP Server (journal, rules, sync, analysis)
+
+Run via entry point `magpie-mcp`. Exposes these tools:
+
+| Tool | Purpose |
+|---|---|
+| `journal_list` | List trades (filter by status, symbol) |
+| `journal_show` | Full trade details by ID |
+| `journal_create` | Create a new trade journal entry |
+| `journal_close` | Close a trade with exit details |
+| `sync_positions` | Sync Alpaca positions with local journal |
+| `sync_portfolio_snapshot` | Save daily equity snapshot |
+| `manage_positions` | Scan for profit/stop/DTE triggers |
+| `get_feedback` | Combined performance feedback + rules |
+| `get_analysis_context` | Build market context for a symbol |
+| `rules_list` | List active trading rules |
+| `rules_add` | Add a new trading rule |
+| `rules_remove` | Deactivate or delete a rule |
+| `rules_formatted` | Get rules formatted for prompt injection |
+
+Use the Magpie MCP instead of `uv run python -c "..."` one-liners for journal and rule operations.
 
 ---
 
@@ -47,6 +69,7 @@ src/magpie/
 ├── tracking/
 │   ├── journal.py      CRUD for trade_journal table + contract leg mapping
 │   ├── positions.py    Sync Alpaca positions → local DB (contract-level matching)
+│   ├── rules.py        Trading rules CRUD — lessons learned, injected into prompts
 │   └── pnl.py          Rolling P&L summaries
 ├── execution/
 │   ├── risk.py         Pre-trade checks: position size, daily loss limit
@@ -57,10 +80,12 @@ src/magpie/
 │   ├── data.py         Cached DB queries returning DataFrames for charts
 │   ├── payoff.py       Payoff diagram math (P&L at expiry, breakevens)
 │   └── pages/          equity, payoff_page, greeks, winrate
+├── mcp/
+│   └── server.py       FastMCP server — exposes magpie tools for Claude Code
 └── cli/
     ├── app.py          Typer root; runs DB migrations on startup
     ├── display.py      Shared Rich helpers (tables, panels, color styles)
-    └── commands/       analyze, journal, positions, report, dashboard
+    └── commands/       analyze, journal, positions, report, rules, dashboard
 ```
 
 ---
@@ -79,6 +104,7 @@ Key tables and their purpose:
 | `prediction_accuracy` | Rolled-up win rate by symbol/strategy/prompt version |
 | `portfolio_snapshots` | Daily equity curve |
 | `market_regime_snapshots` | Daily market regime (VIX, SPY trend, classification) |
+| `trading_rules` | Lessons learned from past trades — injected into analysis prompts |
 | `watchlist` | Symbols to scan |
 
 Run ad-hoc queries:
@@ -255,6 +281,53 @@ For manual closes, call `mark_outcome(analysis_id, was_correct)` from `analysis/
 
 ---
 
+## Trading rules
+
+`tracking/rules.py` manages a `trading_rules` table where lessons learned from past trades are stored. Active rules are automatically injected into every LLM analysis prompt via `feedback.py:get_combined_feedback()`.
+
+### Categories
+
+| Category | Purpose |
+|---|---|
+| `sizing` | Position sizing limits and allocation rules |
+| `risk` | Stop losses, DTE thresholds, cushion minimums |
+| `entry` | Entry criteria, directional bias checks |
+| `macro` | Market regime awareness, geopolitical considerations |
+| `execution` | Order placement, MCP quirks, fill verification |
+
+### Usage
+
+```python
+from magpie.tracking.rules import add_rule, list_rules, format_rules_for_prompt
+
+# Add a rule (optionally linked to the trade that taught the lesson)
+add_rule("sizing", "Max 2-3 lots per spread on a $100K account", source_trade_id="abc123")
+
+# List active rules
+rules = list_rules(category="risk")
+
+# Get formatted text for prompt injection (called automatically by get_combined_feedback)
+text = format_rules_for_prompt()
+```
+
+**CLI:**
+
+```bash
+uv run magpie rules list                           # show active rules
+uv run magpie rules list --all                     # include deactivated
+uv run magpie rules add sizing "Max 3 lots"        # add a rule
+uv run magpie rules remove <rule-id>               # deactivate (soft delete)
+uv run magpie rules remove <rule-id> --permanent   # hard delete
+```
+
+**MCP tools:** `rules_list`, `rules_add`, `rules_remove`, `rules_formatted`
+
+### How it integrates
+
+`get_combined_feedback()` calls `format_rules_for_prompt()` and appends the rules block to the combined narrative. The analysis prompt template renders this in the feedback section, so the LLM sees rules alongside performance stats. Rules are flagged if a recommendation would violate them.
+
+---
+
 ## Market regime
 
 `analysis/regime.py` classifies the current market environment so the LLM sees the macro picture alongside symbol-specific data.
@@ -423,3 +496,8 @@ Tests use an in-memory DuckDB fixture (`tests/conftest.py`) — no real API call
 - **Watchlist CLI management** — `magpie watchlist add/remove/list` commands. Table exists, just needs CLI wiring.
 - **Prompt A/B testing infrastructure** — run two prompt versions in parallel on the same symbols, compare outcomes. Requires splitting `PROMPT_VERSION` into concurrent tracks.
 - **Test coverage gaps** — add tests for LLM response parsing edge cases (`_parse_response` in `llm.py`) and risk check logic (`execution/risk.py`).
+
+### Done
+
+- **Trading rules system** — `trading_rules` table, CRUD in `tracking/rules.py`, CLI commands (`magpie rules`), injected into feedback loop and analysis prompts. See "Trading rules" section above.
+- **Magpie MCP server** — FastMCP server exposing journal, rules, sync, and analysis tools. Entry point `magpie-mcp`, registered in `.mcp.json`. See "MCP Servers" section above.

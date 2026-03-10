@@ -21,7 +21,12 @@
       "Bash(tasklist)",
       "mcp__alpaca__close_position",
       "WebSearch",
-      "Bash(wc -l tests/*.py)"
+      "Bash(wc -l tests/*.py)",
+      "Bash(uv pip:*)",
+      "Bash(uv search:*)",
+      "Bash(pip index:*)",
+      "Bash(python -c \"import urllib.request, json; data = json.loads\\(urllib.request.urlopen\\(''https://pypi.org/pypi/fastmcp/json''\\).read\\(\\)\\); print\\(''fastmcp latest:'', data[''info''][''version'']\\)\")",
+      "mcp__magpie__sync_positions"
     ]
   }
 }

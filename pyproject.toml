@@ -29,10 +29,13 @@ dependencies = [
     "streamlit>=1.40.0",
     "plotly>=5.24.0",
     "numpy>=2.0.0",
+    # MCP server
+    "fastmcp>=2.0.0",
 ]
 
 [project.scripts]
 magpie = "magpie.cli.app:app"
+magpie-mcp = "magpie.mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]

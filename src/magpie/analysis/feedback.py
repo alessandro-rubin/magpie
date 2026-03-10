@@ -367,6 +367,15 @@ def get_combined_feedback(
         combined["best_strategy"] = analysis_stats.get("best_strategy")
         combined["worst_strategy"] = analysis_stats.get("worst_strategy")
 
+    # Inject trading rules
+    from magpie.tracking.rules import format_rules_for_prompt
+
+    rules_text = format_rules_for_prompt()
+    if rules_text:
+        combined["rules_text"] = rules_text
+        narratives.append(rules_text)
+        combined["narrative"] = "\n\n".join(narratives) if narratives else ""
+
     return combined
 
 

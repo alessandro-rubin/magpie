@@ -9,6 +9,11 @@
         "ALPACA_SECRET_KEY": "${ALPACA_SECRET_KEY}",
         "ALPACA_PAPER": "true"
       }
+    },
+    "magpie": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "magpie-mcp"]
     }
   }
 }
