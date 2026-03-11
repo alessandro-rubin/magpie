@@ -31,7 +31,7 @@ def _create_analysis(db, analysis_id, symbol, linked_trade_id=None, was_correct=
             id, created_at, underlying_symbol, analysis_type,
             model, prompt_version, context_snapshot, raw_response,
             linked_trade_id, was_correct
-        ) VALUES (?, NOW(), ?, 'entry_recommendation', 'test', 'v1.1', '{}', 'test', ?, ?)
+        ) VALUES (?, datetime('now'), ?, 'entry_recommendation', 'test', 'v1.1', '{}', 'test', ?, ?)
         """,
         [analysis_id, symbol, linked_trade_id, was_correct],
     )
@@ -111,7 +111,7 @@ class TestAutoCloseMarksOutcome:
         row = db.execute(
             "SELECT was_correct, outcome_notes FROM llm_analyses WHERE id = 'a-win'"
         ).fetchone()
-        assert row[0] is True
+        assert row[0] == 1  # SQLite stores booleans as 0/1
         assert "Auto-marked" in row[1]
 
     def test_marks_loser(self, _patch_db, db, monkeypatch):
@@ -145,7 +145,7 @@ class TestAutoCloseMarksOutcome:
         row = db.execute(
             "SELECT was_correct, outcome_notes FROM llm_analyses WHERE id = 'a-loss'"
         ).fetchone()
-        assert row[0] is False
+        assert row[0] == 0  # SQLite stores booleans as 0/1
 
     def test_no_crash_without_linked_analyses(self, _patch_db, db, monkeypatch):
         """Auto-close should work fine even when no analyses are linked."""
@@ -191,7 +191,7 @@ class TestComputeTradePerformance:
         # Set exit data
         db.execute("""
             UPDATE trade_journal
-            SET exit_time = NOW(), realized_pnl = -3320, realized_pnl_pct = -0.897
+            SET exit_time = datetime('now'), realized_pnl = -3320, realized_pnl_pct = -0.897
             WHERE underlying_symbol = 'AAPL'
         """)
 
@@ -203,7 +203,7 @@ class TestComputeTradePerformance:
         )
         db.execute("""
             UPDATE trade_journal
-            SET exit_time = NOW(), realized_pnl = 200, realized_pnl_pct = 0.312
+            SET exit_time = datetime('now'), realized_pnl = 200, realized_pnl_pct = 0.312
             WHERE underlying_symbol = 'XOM'
         """)
 
@@ -229,7 +229,7 @@ class TestComputeTradePerformance:
             )
             db.execute(f"""
                 UPDATE trade_journal
-                SET exit_time = NOW(), realized_pnl = {pnl}, realized_pnl_pct = {pnl/100}
+                SET exit_time = datetime('now'), realized_pnl = {pnl}, realized_pnl_pct = {pnl/100}
                 WHERE underlying_symbol = '{sym}'
             """)
 
@@ -250,7 +250,7 @@ class TestCombinedFeedback:
         )
         db.execute("""
             UPDATE trade_journal
-            SET exit_time = NOW(), realized_pnl = 150, realized_pnl_pct = 0.75
+            SET exit_time = datetime('now'), realized_pnl = 150, realized_pnl_pct = 0.75
             WHERE id = ?
         """, [trade_id])
 
@@ -271,7 +271,7 @@ class TestCombinedFeedback:
         )
         db.execute("""
             UPDATE trade_journal
-            SET exit_time = NOW(), realized_pnl = -200, realized_pnl_pct = -0.25
+            SET exit_time = datetime('now'), realized_pnl = -200, realized_pnl_pct = -0.25
             WHERE id = ?
         """, [trade_id])
 

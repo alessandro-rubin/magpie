@@ -2,175 +2,175 @@
 -- ASSETS: canonical asset reference
 -- ============================================================
 CREATE TABLE IF NOT EXISTS assets (
-    symbol          VARCHAR PRIMARY KEY,
-    asset_class     VARCHAR NOT NULL,       -- 'us_equity', 'crypto', 'option'
-    underlying      VARCHAR,                -- for options: parent symbol (e.g. 'AAPL')
-    exchange        VARCHAR,
-    tradeable       BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMPTZ DEFAULT NOW()
+    symbol          TEXT PRIMARY KEY,
+    asset_class     TEXT NOT NULL,       -- 'us_equity', 'crypto', 'option'
+    underlying      TEXT,                -- for options: parent symbol (e.g. 'AAPL')
+    exchange        TEXT,
+    tradeable       INTEGER DEFAULT 1,
+    created_at      TIMESTAMP DEFAULT (datetime('now'))
 );
 
 -- ============================================================
 -- OPTIONS CONTRACTS: snapshot of contract metadata at analysis time
 -- ============================================================
 CREATE TABLE IF NOT EXISTS option_contracts (
-    contract_id         VARCHAR PRIMARY KEY,    -- OCC symbol e.g. AAPL250117C00200000
-    underlying_symbol   VARCHAR NOT NULL,
+    contract_id         TEXT PRIMARY KEY,    -- OCC symbol e.g. AAPL250117C00200000
+    underlying_symbol   TEXT NOT NULL,
     expiration_date     DATE NOT NULL,
-    strike_price        DECIMAL(12,4) NOT NULL,
-    option_type         VARCHAR NOT NULL,       -- 'call' or 'put'
+    strike_price        REAL NOT NULL,
+    option_type         TEXT NOT NULL,       -- 'call' or 'put'
     multiplier          INTEGER DEFAULT 100,
-    style               VARCHAR DEFAULT 'american',
-    created_at          TIMESTAMPTZ DEFAULT NOW()
+    style               TEXT DEFAULT 'american',
+    created_at          TIMESTAMP DEFAULT (datetime('now'))
 );
 
 -- ============================================================
 -- MARKET SNAPSHOTS: point-in-time options data with Greeks
 -- Append-only — query by time range for IV history
 -- ============================================================
-CREATE SEQUENCE IF NOT EXISTS option_snapshots_seq;
-
 CREATE TABLE IF NOT EXISTS option_snapshots (
-    id                  BIGINT PRIMARY KEY DEFAULT nextval('option_snapshots_seq'),
-    contract_id         VARCHAR NOT NULL,
-    snapshot_time       TIMESTAMPTZ NOT NULL,
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_id         TEXT NOT NULL,
+    snapshot_time       TIMESTAMP NOT NULL,
     -- Price
-    bid                 DECIMAL(10,4),
-    ask                 DECIMAL(10,4),
-    mid                 DECIMAL(10,4),
-    last_price          DECIMAL(10,4),
+    bid                 REAL,
+    ask                 REAL,
+    mid                 REAL,
+    last_price          REAL,
     volume              INTEGER,
     open_interest       INTEGER,
     -- Greeks
-    implied_volatility  DECIMAL(10,6),
-    delta               DECIMAL(10,6),
-    gamma               DECIMAL(10,6),
-    theta               DECIMAL(10,6),
-    vega                DECIMAL(10,6),
-    rho                 DECIMAL(10,6),
+    implied_volatility  REAL,
+    delta               REAL,
+    gamma               REAL,
+    theta               REAL,
+    vega                REAL,
+    rho                 REAL,
     -- Underlying at snapshot time
-    underlying_price    DECIMAL(12,4),
-    underlying_iv_rank  DECIMAL(6,4),
+    underlying_price    REAL,
+    underlying_iv_rank  REAL,
     -- Source
-    data_source         VARCHAR DEFAULT 'alpaca_mcp'
+    data_source         TEXT DEFAULT 'alpaca_mcp'
 );
 
 -- ============================================================
 -- TRADE JOURNAL: every considered trade (paper or hypothetical)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS trade_journal (
-    id                  VARCHAR PRIMARY KEY,    -- UUID
-    created_at          TIMESTAMPTZ DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ DEFAULT NOW(),
+    id                  TEXT PRIMARY KEY,    -- UUID
+    created_at          TIMESTAMP DEFAULT (datetime('now')),
+    updated_at          TIMESTAMP DEFAULT (datetime('now')),
 
     -- Classification
-    trade_mode          VARCHAR NOT NULL,       -- 'paper', 'hypothetical', 'live'
-    status              VARCHAR NOT NULL,       -- 'pending_review', 'approved', 'rejected',
-                                               --  'open', 'closed', 'expired'
+    trade_mode          TEXT NOT NULL,       -- 'paper', 'hypothetical', 'live'
+    status              TEXT NOT NULL,       -- 'pending_review', 'approved', 'rejected',
+                                            --  'open', 'closed', 'expired'
 
     -- Asset
-    underlying_symbol   VARCHAR NOT NULL,
-    asset_class         VARCHAR NOT NULL,       -- 'option', 'stock', 'crypto'
-    strategy_type       VARCHAR,               -- 'single_leg_call', 'vertical_spread',
-                                               --  'iron_condor', 'straddle', 'calendar_spread', ...
+    underlying_symbol   TEXT NOT NULL,
+    asset_class         TEXT NOT NULL,       -- 'option', 'stock', 'crypto'
+    strategy_type       TEXT,               -- 'single_leg_call', 'vertical_spread',
+                                            --  'iron_condor', 'straddle', 'calendar_spread', ...
 
     -- Entry
-    entry_time          TIMESTAMPTZ,
-    entry_price         DECIMAL(12,4),
+    entry_time          TIMESTAMP,
+    entry_price         REAL,
     quantity            INTEGER NOT NULL,
-    entry_commission    DECIMAL(8,4) DEFAULT 0,
-    legs                JSON,                  -- array of leg objects for multi-leg strategies
+    entry_commission    REAL DEFAULT 0,
+    legs                TEXT,               -- JSON array of leg objects for multi-leg strategies
 
     -- Exit
-    exit_time           TIMESTAMPTZ,
-    exit_price          DECIMAL(12,4),
-    exit_commission     DECIMAL(8,4) DEFAULT 0,
-    exit_reason         VARCHAR,               -- 'target_hit', 'stop_loss', 'expiry', 'manual'
+    exit_time           TIMESTAMP,
+    exit_price          REAL,
+    exit_commission     REAL DEFAULT 0,
+    exit_reason         TEXT,               -- 'target_hit', 'stop_loss', 'expiry', 'manual'
 
     -- P&L
-    realized_pnl        DECIMAL(12,4),
-    realized_pnl_pct    DECIMAL(8,6),
-    unrealized_pnl      DECIMAL(12,4),
+    realized_pnl        REAL,
+    realized_pnl_pct    REAL,
+    unrealized_pnl      REAL,
 
     -- Greeks at entry
-    entry_iv            DECIMAL(10,6),
-    entry_delta         DECIMAL(10,6),
-    entry_theta         DECIMAL(10,6),
-    entry_vega          DECIMAL(10,6),
-    entry_gamma         DECIMAL(10,6),
-    entry_underlying_price  DECIMAL(12,4),
+    entry_iv            REAL,
+    entry_delta         REAL,
+    entry_theta         REAL,
+    entry_vega          REAL,
+    entry_gamma         REAL,
+    entry_underlying_price  REAL,
     dte_at_entry        INTEGER,
 
     -- Risk parameters
-    max_profit          DECIMAL(12,4),
-    max_loss            DECIMAL(12,4),
-    breakeven_price     DECIMAL(12,4),
+    max_profit          REAL,
+    max_loss            REAL,
+    breakeven_price     REAL,
 
     -- Alpaca tracking
-    alpaca_order_id     VARCHAR,
-    alpaca_position_id  VARCHAR,
+    alpaca_order_id     TEXT,
+    alpaca_position_id  TEXT,
 
     -- Metadata
-    tags                VARCHAR[],
-    notes               TEXT
+    tags                TEXT,               -- JSON array (was VARCHAR[] in DuckDB)
+    notes               TEXT,
+
+    -- Rationale
+    entry_rationale     TEXT,
+    exit_rationale      TEXT
 );
 
 -- ============================================================
 -- LLM ANALYSES: every recommendation + outcome
 -- ============================================================
 CREATE TABLE IF NOT EXISTS llm_analyses (
-    id                  VARCHAR PRIMARY KEY,    -- UUID
-    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    id                  TEXT PRIMARY KEY,    -- UUID
+    created_at          TIMESTAMP DEFAULT (datetime('now')),
 
-    underlying_symbol   VARCHAR NOT NULL,
-    analysis_type       VARCHAR NOT NULL,       -- 'entry_recommendation', 'exit_recommendation', 'market_scan'
+    underlying_symbol   TEXT NOT NULL,
+    analysis_type       TEXT NOT NULL,       -- 'entry_recommendation', 'exit_recommendation', 'market_scan'
 
     -- LLM inputs
-    model               VARCHAR NOT NULL,
-    prompt_version      VARCHAR NOT NULL,
-    context_snapshot    JSON NOT NULL,
-    past_performance_summary JSON,
+    model               TEXT NOT NULL,
+    prompt_version      TEXT NOT NULL,
+    context_snapshot    TEXT NOT NULL,       -- JSON
+    past_performance_summary TEXT,           -- JSON
 
     -- LLM outputs
     raw_response        TEXT NOT NULL,
-    recommendation      VARCHAR,               -- 'enter', 'avoid', 'exit', 'hold', 'reduce'
-    confidence_score    DECIMAL(4,3),
-    strategy_suggested  VARCHAR,
+    recommendation      TEXT,               -- 'enter', 'avoid', 'exit', 'hold', 'reduce'
+    confidence_score    REAL,
+    strategy_suggested  TEXT,
     reasoning_summary   TEXT,
-    suggested_entry     DECIMAL(12,4),
-    suggested_stop      DECIMAL(12,4),
-    suggested_target    DECIMAL(12,4),
+    suggested_entry     REAL,
+    suggested_stop      REAL,
+    suggested_target    REAL,
 
     -- Outcome (filled after trade closes)
-    linked_trade_id     VARCHAR,
-    was_correct         BOOLEAN,
+    linked_trade_id     TEXT,
+    was_correct         INTEGER,            -- 0/1 boolean
     outcome_notes       TEXT,
-    outcome_recorded_at TIMESTAMPTZ
+    outcome_recorded_at TIMESTAMP
 );
 
 -- ============================================================
 -- PREDICTION ACCURACY: rolled-up stats
 -- ============================================================
-CREATE SEQUENCE IF NOT EXISTS prediction_accuracy_seq;
-
 CREATE TABLE IF NOT EXISTS prediction_accuracy (
-    id                  BIGINT PRIMARY KEY DEFAULT nextval('prediction_accuracy_seq'),
-    computed_at         TIMESTAMPTZ DEFAULT NOW(),
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    computed_at         TIMESTAMP DEFAULT (datetime('now')),
     window_days         INTEGER NOT NULL,
-    underlying_symbol   VARCHAR,               -- NULL = aggregate
-    strategy_type       VARCHAR,               -- NULL = aggregate
-    prompt_version      VARCHAR,
-    model               VARCHAR,
+    underlying_symbol   TEXT,               -- NULL = aggregate
+    strategy_type       TEXT,               -- NULL = aggregate
+    prompt_version      TEXT,
+    model               TEXT,
 
     total_analyses      INTEGER NOT NULL,
     entered_trades      INTEGER,
     wins                INTEGER,
     losses              INTEGER,
-    win_rate            DECIMAL(6,4),
-    avg_return_pct      DECIMAL(8,6),
-    avg_days_held       DECIMAL(8,4),
-    total_pnl           DECIMAL(14,4),
-    sharpe_approx       DECIMAL(8,6)
+    win_rate            REAL,
+    avg_return_pct      REAL,
+    avg_days_held       REAL,
+    total_pnl           REAL,
+    sharpe_approx       REAL
 );
 
 -- ============================================================
@@ -178,30 +178,22 @@ CREATE TABLE IF NOT EXISTS prediction_accuracy (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     snapshot_date           DATE PRIMARY KEY,
-    equity                  DECIMAL(14,4) NOT NULL,
-    cash                    DECIMAL(14,4),
-    buying_power            DECIMAL(14,4),
+    equity                  REAL NOT NULL,
+    cash                    REAL,
+    buying_power            REAL,
     open_positions_count    INTEGER,
-    unrealized_pnl          DECIMAL(14,4),
-    realized_pnl_today      DECIMAL(14,4),
-    source                  VARCHAR DEFAULT 'alpaca'
+    unrealized_pnl          REAL,
+    realized_pnl_today      REAL,
+    source                  TEXT DEFAULT 'alpaca'
 );
 
 -- ============================================================
 -- WATCHLIST: symbols actively monitored
 -- ============================================================
 CREATE TABLE IF NOT EXISTS watchlist (
-    symbol              VARCHAR PRIMARY KEY,
-    added_at            TIMESTAMPTZ DEFAULT NOW(),
+    symbol              TEXT PRIMARY KEY,
+    added_at            TIMESTAMP DEFAULT (datetime('now')),
     priority            INTEGER DEFAULT 5,
     notes               TEXT,
-    alpaca_watchlist_id VARCHAR
-);
-
--- ============================================================
--- MIGRATIONS TRACKER (internal)
--- ============================================================
-CREATE TABLE IF NOT EXISTS magpie_migrations (
-    filename    VARCHAR PRIMARY KEY,
-    applied_at  TIMESTAMPTZ DEFAULT NOW()
+    alpaca_watchlist_id TEXT
 );

@@ -15,7 +15,9 @@ wheels/
 # Database
 data/*.duckdb
 data/*.duckdb.wal
-
+data/*.duckdb.backup
+data/*.sqlite
+data/*.sqlite-wal
 # uv
 uv.lock
 

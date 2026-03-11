@@ -52,7 +52,7 @@ Use the Magpie MCP instead of `uv run python -c "..."` one-liners for journal an
 src/magpie/
 ├── config.py           Typed settings via pydantic-settings, loaded from .env
 ├── db/
-│   ├── connection.py   DuckDB singleton + migration runner
+│   ├── connection.py   SQLite connection (WAL mode) + migration runner
 │   ├── models.py       Python dataclasses mirroring DB tables
 │   └── migrations/     SQL DDL files (applied in order on first connect)
 ├── market/
@@ -90,9 +90,9 @@ src/magpie/
 
 ---
 
-## Database (DuckDB)
+## Database (SQLite)
 
-File: `data/magpie.duckdb` (auto-created, gitignored).
+File: `data/magpie.sqlite` (auto-created, gitignored). Uses WAL mode for concurrent read/write access across processes (MCP server, CLI, sync scripts).
 
 Key tables and their purpose:
 
@@ -479,7 +479,7 @@ uv run ruff check .    # lint
 uv run ruff format .   # format
 ```
 
-Tests use an in-memory DuckDB fixture (`tests/conftest.py`) — no real API calls.
+Tests use an in-memory SQLite fixture (`tests/conftest.py`) — no real API calls.
 
 ---
 
@@ -501,3 +501,4 @@ Tests use an in-memory DuckDB fixture (`tests/conftest.py`) — no real API call
 
 - **Trading rules system** — `trading_rules` table, CRUD in `tracking/rules.py`, CLI commands (`magpie rules`), injected into feedback loop and analysis prompts. See "Trading rules" section above.
 - **Magpie MCP server** — FastMCP server exposing journal, rules, sync, and analysis tools. Entry point `magpie-mcp`, registered in `.mcp.json`. See "MCP Servers" section above.
+- **SQLite migration** — migrated from DuckDB to SQLite with WAL mode. Resolves deadlock issues when MCP server and CLI/sync scripts access the DB concurrently. All SQL uses SQLite syntax (`datetime('now')`, `INTEGER` for booleans, `REAL` for decimals). Migration script at `scripts/migrate_duckdb_to_sqlite.py`.

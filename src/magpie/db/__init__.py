@@ -1,1 +1,1 @@
-"""Database layer — DuckDB connection and schema management."""
+"""Database layer — SQLite connection and schema management."""

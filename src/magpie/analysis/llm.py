@@ -169,6 +169,7 @@ def _persist_analysis(analysis: LLMAnalysis) -> None:
             analysis.suggested_target,
         ],
     )
+    conn.commit()
 
 
 def mark_outcome(analysis_id: str, was_correct: bool, notes: str | None = None) -> None:
@@ -179,8 +180,9 @@ def mark_outcome(analysis_id: str, was_correct: bool, notes: str | None = None) 
     conn.execute(
         """
         UPDATE llm_analyses
-        SET was_correct = ?, outcome_notes = ?, outcome_recorded_at = NOW()
+        SET was_correct = ?, outcome_notes = ?, outcome_recorded_at = datetime('now')
         WHERE id = ?
         """,
         [was_correct, notes, analysis_id],
     )
+    conn.commit()

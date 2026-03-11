@@ -1,4 +1,4 @@
-"""Trading rules — CRUD operations on the trading_rules DuckDB table.
+"""Trading rules — CRUD operations on the trading_rules table.
 
 Rules capture lessons learned from past trades and are injected into
 LLM analysis prompts so the system avoids repeating mistakes.
@@ -31,10 +31,11 @@ def add_rule(
     conn.execute(
         """
         INSERT INTO trading_rules (id, category, rule, source_trade_id, active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, TRUE, ?, ?)
+        VALUES (?, ?, ?, ?, 1, ?, ?)
         """,
         [rule_id, category, rule, source_trade_id, now, now],
     )
+    conn.commit()
     return rule_id
 
 
@@ -76,9 +77,10 @@ def deactivate_rule(rule_id: str) -> bool:
     if count == 0:
         return False
     conn.execute(
-        "UPDATE trading_rules SET active = FALSE, updated_at = NOW() WHERE id LIKE ?",
+        "UPDATE trading_rules SET active = 0, updated_at = datetime('now') WHERE id LIKE ?",
         [f"{rule_id}%"],
     )
+    conn.commit()
     return True
 
 
@@ -91,9 +93,10 @@ def activate_rule(rule_id: str) -> bool:
     if count == 0:
         return False
     conn.execute(
-        "UPDATE trading_rules SET active = TRUE, updated_at = NOW() WHERE id LIKE ?",
+        "UPDATE trading_rules SET active = 1, updated_at = datetime('now') WHERE id LIKE ?",
         [f"{rule_id}%"],
     )
+    conn.commit()
     return True
 
 
@@ -109,6 +112,7 @@ def delete_rule(rule_id: str) -> bool:
         "DELETE FROM trading_rules WHERE id LIKE ?",
         [f"{rule_id}%"],
     )
+    conn.commit()
     return True
 
 

@@ -6,7 +6,12 @@ Or via the entry point: magpie-mcp
 
 from __future__ import annotations
 
+import logging
+import sys
+
 from fastmcp import FastMCP
+
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP(
     "magpie",
@@ -18,8 +23,10 @@ mcp = FastMCP(
 
 def _init_db() -> None:
     """Ensure DB connection and migrations are ready."""
+    logger.debug("_init_db: connecting...")
     from magpie.db.connection import get_connection
     get_connection()
+    logger.debug("_init_db: done")
 
 
 # ── Journal Tools ─────────────────────────────────────────────────────────────
@@ -377,9 +384,16 @@ def rules_formatted() -> str:
 
 def main() -> None:
     """Run the Magpie MCP server."""
-    # Load .env so DB path and config are available
+    # Enable debug logging to stderr for MCP troubleshooting
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        stream=sys.stderr,
+    )
+    logger.debug("main: loading .env")
     from dotenv import load_dotenv
     load_dotenv()
+    logger.debug("main: starting MCP server")
     mcp.run()
 
 

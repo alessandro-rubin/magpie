@@ -26,7 +26,12 @@
       "Bash(uv search:*)",
       "Bash(pip index:*)",
       "Bash(python -c \"import urllib.request, json; data = json.loads\\(urllib.request.urlopen\\(''https://pypi.org/pypi/fastmcp/json''\\).read\\(\\)\\); print\\(''fastmcp latest:'', data[''info''][''version'']\\)\")",
-      "mcp__magpie__sync_positions"
+      "mcp__magpie__sync_positions",
+      "Bash(.venv/Scripts/python -m pytest -x -v)",
+      "Bash(.venv/Scripts/python scripts/migrate_duckdb_to_sqlite.py)",
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(.venv/Scripts/python -m pip install duckdb)",
+      "Bash(.venv/Scripts/python -m pytest -x -q)"
     ]
   }
 }

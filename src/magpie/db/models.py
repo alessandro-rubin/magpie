@@ -1,4 +1,4 @@
-"""Python dataclasses mirroring the DuckDB schema tables."""
+"""Python dataclasses mirroring the database schema tables."""
 
 from __future__ import annotations
 

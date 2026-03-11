@@ -15,7 +15,7 @@ def get_equity_df(days: int = 90) -> pd.DataFrame:
         f"""
         SELECT snapshot_date, equity, cash, unrealized_pnl, realized_pnl_today
         FROM portfolio_snapshots
-        WHERE snapshot_date >= CURRENT_DATE - INTERVAL {int(days)} DAY
+        WHERE snapshot_date >= date('now', '-{int(days)} days')
         ORDER BY snapshot_date ASC
         """
     )
@@ -38,7 +38,7 @@ def get_trades_df(
         filters.append("underlying_symbol = ?")
         params.append(symbol.upper())
     if window_days:
-        filters.append(f"created_at >= NOW() - INTERVAL {int(window_days)} DAY")
+        filters.append(f"created_at >= datetime('now', '-{int(window_days)} days')")
 
     where = " AND ".join(filters)
     return execute_df(
@@ -80,7 +80,7 @@ def get_iv_history_df(symbol: str, days: int = 90) -> pd.DataFrame:
         FROM option_snapshots os
         JOIN option_contracts oc ON os.contract_id = oc.contract_id
         WHERE oc.underlying_symbol = ?
-          AND os.snapshot_time >= NOW() - INTERVAL {int(days)} DAY
+          AND os.snapshot_time >= datetime('now', '-{int(days)} days')
         ORDER BY os.snapshot_time
         """,
         [symbol.upper()],
@@ -96,7 +96,7 @@ def get_contract_snapshots_df(contract_id: str, days: int = 90) -> pd.DataFrame:
                underlying_price, bid, ask, mid, last_price
         FROM option_snapshots
         WHERE contract_id = ?
-          AND snapshot_time >= NOW() - INTERVAL {int(days)} DAY
+          AND snapshot_time >= datetime('now', '-{int(days)} days')
         ORDER BY snapshot_time
         """,
         [contract_id],
@@ -130,7 +130,7 @@ def get_winrate_by_strategy_df(window_days: int = 90) -> pd.DataFrame:
         FROM trade_journal
         WHERE status = 'closed'
           AND realized_pnl IS NOT NULL
-          AND exit_time >= NOW() - INTERVAL {int(window_days)} DAY
+          AND exit_time >= datetime('now', '-{int(window_days)} days')
         GROUP BY strategy_type
         """
     )
@@ -164,7 +164,7 @@ def get_winrate_by_symbol_df(window_days: int = 90) -> pd.DataFrame:
         FROM trade_journal
         WHERE status = 'closed'
           AND realized_pnl IS NOT NULL
-          AND exit_time >= NOW() - INTERVAL {int(window_days)} DAY
+          AND exit_time >= datetime('now', '-{int(window_days)} days')
         GROUP BY underlying_symbol
         """
     )
@@ -180,7 +180,7 @@ def get_pnl_distribution_df(window_days: int = 90) -> pd.DataFrame:
         FROM trade_journal
         WHERE status = 'closed'
           AND realized_pnl IS NOT NULL
-          AND exit_time >= NOW() - INTERVAL {int(window_days)} DAY
+          AND exit_time >= datetime('now', '-{int(window_days)} days')
         ORDER BY exit_time ASC
         """
     )

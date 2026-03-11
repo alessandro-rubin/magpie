@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     anthropic_model: str = Field("claude-opus-4-6", description="Model to use for analysis")
 
     # Database
-    magpie_db_path: Path = Field(Path("./data/magpie.duckdb"), description="DuckDB file path")
+    magpie_db_path: Path = Field(Path("./data/magpie.sqlite"), description="SQLite file path")
 
     # Risk controls
     magpie_max_position_pct: float = Field(

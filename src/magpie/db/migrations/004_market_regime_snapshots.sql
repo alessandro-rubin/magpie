@@ -4,27 +4,25 @@
 -- Used by the analysis pipeline to inject macro context into
 -- LLM prompts and for regime-conditional win rate analysis.
 -- ============================================================
-CREATE SEQUENCE IF NOT EXISTS market_regime_snapshots_seq;
-
 CREATE TABLE IF NOT EXISTS market_regime_snapshots (
-    id                  BIGINT PRIMARY KEY DEFAULT nextval('market_regime_snapshots_seq'),
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     snapshot_date       DATE NOT NULL,
     -- VIX
-    vix_level           DECIMAL(8,4),
-    vix_source          VARCHAR,            -- 'yahoo_finance' | 'spy_realized_vol'
+    vix_level           REAL,
+    vix_source          TEXT,            -- 'yahoo_finance' | 'spy_realized_vol'
     -- SPY trend
-    spy_price           DECIMAL(12,4),
-    spy_sma_50          DECIMAL(12,4),
-    spy_sma_200         DECIMAL(12,4),
-    spy_momentum_20d    DECIMAL(8,6),       -- 20-day return
+    spy_price           REAL,
+    spy_sma_50          REAL,
+    spy_sma_200         REAL,
+    spy_momentum_20d    REAL,           -- 20-day return
     -- Regime classification
-    trend_regime        VARCHAR NOT NULL,    -- 'bullish' | 'neutral' | 'bearish'
-    volatility_regime   VARCHAR NOT NULL,    -- 'low' | 'normal' | 'high'
-    composite_regime    VARCHAR NOT NULL,    -- e.g. 'bullish_low_vol', 'bearish_high_vol'
+    trend_regime        TEXT NOT NULL,    -- 'bullish' | 'neutral' | 'bearish'
+    volatility_regime   TEXT NOT NULL,    -- 'low' | 'normal' | 'high'
+    composite_regime    TEXT NOT NULL,    -- e.g. 'bullish_low_vol', 'bearish_high_vol'
     -- Breadth proxy
-    spy_put_call_ratio  DECIMAL(8,4),
+    spy_put_call_ratio  REAL,
     -- Metadata
-    created_at          TIMESTAMPTZ DEFAULT NOW()
+    created_at          TIMESTAMP DEFAULT (datetime('now'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_regime_snapshot_date

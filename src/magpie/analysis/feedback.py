@@ -23,7 +23,7 @@ def compute_accuracy_stats(
     """
     conn = get_connection()
 
-    filters = [f"a.created_at >= NOW() - INTERVAL {int(window_days)} DAY", "a.was_correct IS NOT NULL"]
+    filters = [f"a.created_at >= datetime('now', '-{int(window_days)} days')", "a.was_correct IS NOT NULL"]
     params: list = []
 
     if symbol:
@@ -56,8 +56,8 @@ def compute_accuracy_stats(
         return {}
 
     total = len(rows)
-    wins = sum(1 for r in rows if r[0] is True)
-    losses = sum(1 for r in rows if r[0] is False)
+    wins = sum(1 for r in rows if r[0])
+    losses = sum(1 for r in rows if not r[0])
     win_rate = wins / total if total > 0 else 0
 
     returns = [r[1] for r in rows if r[1] is not None]
@@ -82,7 +82,7 @@ def compute_accuracy_stats(
         if strat not in strategy_stats:
             strategy_stats[strat] = {"wins": 0, "total": 0}
         strategy_stats[strat]["total"] += 1
-        if r[0] is True:
+        if r[0]:
             strategy_stats[strat]["wins"] += 1
 
     best_strategy = None
@@ -170,7 +170,7 @@ def compute_trade_performance(
     conn = get_connection()
 
     filters = [
-        f"exit_time >= NOW() - INTERVAL {int(window_days)} DAY",
+        f"exit_time >= datetime('now', '-{int(window_days)} days')",
         "status = 'closed'",
         "realized_pnl IS NOT NULL",
     ]
@@ -188,8 +188,8 @@ def compute_trade_performance(
     rows = conn.execute(
         f"""
         SELECT
-            CAST(realized_pnl AS DOUBLE) AS realized_pnl,
-            CAST(realized_pnl_pct AS DOUBLE) AS realized_pnl_pct,
+            CAST(realized_pnl AS REAL) AS realized_pnl,
+            CAST(realized_pnl_pct AS REAL) AS realized_pnl_pct,
             strategy_type,
             exit_time,
             entry_time,
@@ -402,7 +402,7 @@ def upsert_prediction_accuracy(
             prompt_version, model,
             total_analyses, entered_trades, wins, losses,
             win_rate, avg_return_pct, avg_days_held, total_pnl
-        ) VALUES (NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        ) VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
         """,
         [
             window_days,
@@ -419,3 +419,4 @@ def upsert_prediction_accuracy(
             stats.get("avg_days_held"),
         ],
     )
+    conn.commit()

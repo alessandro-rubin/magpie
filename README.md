@@ -180,7 +180,7 @@ uv run python scripts/manage_positions.py --execute   # actually close
 ```
 src/magpie/
 ├── config.py           Settings from .env (pydantic-settings)
-├── db/                 DuckDB connection, migrations, dataclass models
+├── db/                 SQLite connection (WAL mode), migrations, dataclass models
 ├── market/             Alpaca-py wrappers (stocks, options, context assembly)
 ├── analysis/           LLM prompts, feedback loop, market regime, accuracy tracking
 ├── tracking/           Trade journal, position sync (with Greeks), P&L calculations
@@ -195,14 +195,14 @@ scripts/
 └── monday_close_losers.py  Cron: close losing positions before Monday expiry
 
 data/
-└── magpie.duckdb       Local database (gitignored)
+└── magpie.sqlite       Local database (gitignored)
 ```
 
 ---
 
 ## Database
 
-Magpie uses [DuckDB](https://duckdb.org/) — a local, serverless analytical database. No setup required; the file is created automatically on first run.
+Magpie uses [SQLite](https://sqlite.org/) with WAL (Write-Ahead Logging) mode — a local, serverless database that supports concurrent read/write access across processes. No setup required; the file is created automatically on first run.
 
 Key tables:
 - `trade_journal` — every trade considered (paper, hypothetical, or live)

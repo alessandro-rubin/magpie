@@ -34,7 +34,7 @@ class TestAddRule:
         assert len(rules) == 1
         assert rules[0].category == "sizing"
         assert rules[0].rule == "Max 2-3 lots per spread"
-        assert rules[0].active is True
+        assert rules[0].active  # truthy (1 in SQLite)
 
     def test_rejects_invalid_category(self, _patch_db):
         with pytest.raises(ValueError, match="Category must be one of"):
@@ -91,7 +91,7 @@ class TestDeactivateActivate:
         assert deactivate_rule(rule_id) is True
 
         rules = list_rules(active_only=False)
-        assert rules[0].active is False
+        assert not rules[0].active  # falsy (0 in SQLite)
 
     def test_reactivate(self, _patch_db):
         rule_id = add_rule("risk", "Close spreads at 14 DTE")
@@ -100,7 +100,7 @@ class TestDeactivateActivate:
 
         rules = list_rules()
         assert len(rules) == 1
-        assert rules[0].active is True
+        assert rules[0].active  # truthy (1 in SQLite)
 
     def test_deactivate_by_prefix(self, _patch_db):
         rule_id = add_rule("risk", "Some rule")
@@ -164,7 +164,7 @@ class TestFeedbackIntegration:
         )
         db.execute("""
             UPDATE trade_journal
-            SET exit_time = NOW(), realized_pnl = 100, realized_pnl_pct = 0.5
+            SET exit_time = datetime('now'), realized_pnl = 100, realized_pnl_pct = 0.5
             WHERE id = ?
         """, [trade_id])
 

@@ -88,7 +88,7 @@ def sync_from_alpaca() -> dict:
                 """
                 UPDATE trade_journal
                 SET entry_delta = ?, entry_theta = ?, entry_vega = ?,
-                    entry_gamma = ?, entry_iv = ?, updated_at = NOW()
+                    entry_gamma = ?, entry_iv = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
                 [
@@ -100,6 +100,7 @@ def sync_from_alpaca() -> dict:
                     trade.id,
                 ],
             )
+            conn.commit()
 
     # Phase 3: Auto-import unmatched Alpaca positions
     unmatched = {
@@ -385,3 +386,4 @@ def sync_portfolio_snapshot() -> None:
         """,
         [today, equity, cash, buying_power, len(positions), unrealized_total],
     )
+    conn.commit()

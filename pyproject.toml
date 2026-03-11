@@ -9,8 +9,7 @@ dependencies = [
     "alpaca-py>=0.38.0",
     # LLM
     "anthropic>=0.40.0",
-    # Database
-    "duckdb>=1.2.0",
+    # Database: sqlite3 is in stdlib, pandas for execute_df
     # Config & validation
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",

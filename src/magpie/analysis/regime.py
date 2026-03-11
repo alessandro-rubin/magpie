@@ -268,6 +268,7 @@ def save_regime_snapshot(regime: dict) -> None:
             regime.get("spy_put_call_ratio"),
         ],
     )
+    conn.commit()
 
 
 def get_latest_regime() -> dict | None:

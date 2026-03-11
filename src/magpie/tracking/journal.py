@@ -1,4 +1,4 @@
-"""Trade journal — read/write operations on the trade_journal DuckDB table."""
+"""Trade journal — read/write operations on the trade_journal table."""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ def create_trade(
     legs_json = json.dumps(legs) if legs is not None else None
 
     tags = kwargs.get("tags", [])
+    tags_json = json.dumps(tags) if tags else None
 
     conn.execute(
         """
@@ -60,10 +61,11 @@ def create_trade(
             kwargs.get("entry_underlying_price"), kwargs.get("dte_at_entry"),
             kwargs.get("max_profit"), kwargs.get("max_loss"), kwargs.get("breakeven_price"),
             kwargs.get("alpaca_order_id"), kwargs.get("alpaca_position_id"),
-            tags, kwargs.get("notes"),
+            tags_json, kwargs.get("notes"),
             kwargs.get("entry_rationale"),
         ],
     )
+    conn.commit()
     return trade_id
 
 
@@ -84,21 +86,23 @@ def update_trade_status(
         UPDATE trade_journal
         SET status = ?, exit_price = ?, exit_time = ?, exit_reason = ?,
             realized_pnl = ?, realized_pnl_pct = ?, exit_rationale = ?,
-            updated_at = NOW()
+            updated_at = datetime('now')
         WHERE id = ?
         """,
         [status, exit_price, exit_time, exit_reason, realized_pnl, realized_pnl_pct,
          exit_rationale, trade_id],
     )
+    conn.commit()
 
 
 def update_unrealized_pnl(trade_id: str, unrealized_pnl: float) -> None:
     """Update the unrealized P&L for an open trade."""
     conn = get_connection()
     conn.execute(
-        "UPDATE trade_journal SET unrealized_pnl = ?, updated_at = NOW() WHERE id = ?",
+        "UPDATE trade_journal SET unrealized_pnl = ?, updated_at = datetime('now') WHERE id = ?",
         [unrealized_pnl, trade_id],
     )
+    conn.commit()
 
 
 def build_contract_leg_map(
@@ -123,9 +127,10 @@ def update_legs(trade_id: str, legs: list[dict]) -> None:
     """Update the legs JSON for a trade."""
     conn = get_connection()
     conn.execute(
-        "UPDATE trade_journal SET legs = ?, updated_at = NOW() WHERE id = ?",
+        "UPDATE trade_journal SET legs = ?, updated_at = datetime('now') WHERE id = ?",
         [json.dumps(legs), trade_id],
     )
+    conn.commit()
 
 
 def link_analysis(trade_id: str, analysis_id: str) -> None:
@@ -135,6 +140,7 @@ def link_analysis(trade_id: str, analysis_id: str) -> None:
         "UPDATE llm_analyses SET linked_trade_id = ? WHERE id = ?",
         [trade_id, analysis_id],
     )
+    conn.commit()
 
 
 def find_linked_analyses(trade_id: str) -> list[dict]:
@@ -165,7 +171,7 @@ def find_unlinked_analysis(symbol: str) -> str | None:
         SELECT id FROM llm_analyses
         WHERE underlying_symbol = ?
           AND linked_trade_id IS NULL
-          AND created_at >= NOW() - INTERVAL 7 DAY
+          AND created_at >= datetime('now', '-7 days')
         ORDER BY created_at DESC
         LIMIT 1
         """,
@@ -280,7 +286,7 @@ def _row_to_entry(row: tuple) -> TradeJournalEntry:
         breakeven_price=float(row[29]) if row[29] is not None else None,
         alpaca_order_id=row[30],
         alpaca_position_id=row[31],
-        tags=list(row[32]) if row[32] else [],
+        tags=json.loads(row[32]) if row[32] else [],
         notes=row[33],
         entry_rationale=row[34],
         exit_rationale=row[35],

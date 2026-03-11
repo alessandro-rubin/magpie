@@ -111,7 +111,7 @@ def _compute_iv_rank(symbol: str, current_iv: float | None) -> float | None:
             SELECT implied_volatility FROM option_snapshots os
             JOIN option_contracts oc ON os.contract_id = oc.contract_id
             WHERE oc.underlying_symbol = ?
-              AND os.snapshot_time >= NOW() - INTERVAL 90 DAY
+              AND os.snapshot_time >= datetime('now', '-90 days')
               AND os.implied_volatility IS NOT NULL
             """,
             [symbol],
