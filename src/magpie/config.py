@@ -1,9 +1,12 @@
 """Application settings loaded from environment / .env file."""
 
+import logging
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -46,16 +49,15 @@ class Settings(BaseSettings):
         1.0, ge=0.1, le=2.0, description="Close at this fraction of max loss (default 100%)"
     )
     magpie_min_dte_close: int = Field(
-        3, ge=0, le=10, description="Close positions with DTE at or below this (gamma risk)"
+        3, ge=0, le=30, description="Close positions with DTE at or below this (gamma risk)"
     )
 
 
 def _load_settings() -> Settings:
     try:
         return Settings()  # type: ignore[call-arg]
-    except Exception:
-        # Return a partial settings object for commands that don't need all keys
-        # (e.g. `magpie --help`). Full validation happens when keys are first accessed.
+    except Exception as exc:
+        logger.warning("Failed to load settings: %s. Some commands may not work.", exc)
         return Settings.model_construct()  # type: ignore[return-value]
 
 
