@@ -18,6 +18,7 @@ data/*.duckdb.wal
 data/*.duckdb.backup
 data/*.sqlite
 data/*.sqlite-wal
+data/*.sqlite-shm
 # uv
 uv.lock
 
