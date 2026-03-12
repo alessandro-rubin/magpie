@@ -31,7 +31,10 @@
       "Bash(.venv/Scripts/python scripts/migrate_duckdb_to_sqlite.py)",
       "Bash(.venv/Scripts/pip install:*)",
       "Bash(.venv/Scripts/python -m pip install duckdb)",
-      "Bash(.venv/Scripts/python -m pytest -x -q)"
+      "Bash(.venv/Scripts/python -m pytest -x -q)",
+      "mcp__magpie__manage_positions",
+      "mcp__magpie__journal_list",
+      "mcp__magpie__get_feedback"
     ]
   }
 }

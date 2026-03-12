@@ -8,13 +8,15 @@ Tracks paper and hypothetical trades, feeds past performance back into LLM analy
 
 ## Overview
 
-Magpie has two integration modes that work together:
+Magpie has three integration modes that work together:
 
-1. **Alpaca MCP in Claude Code** — the Alpaca MCP server is wired into this repo's `.mcp.json`. Once your keys are in `.env`, Claude Code (this assistant) can directly query your paper account, options chains, and place orders conversationally.
+1. **Alpaca MCP in Claude Code** — the Alpaca MCP server is wired into this repo's `.mcp.json`. Once your keys are in `.env`, Claude Code can directly query your paper account, options chains, and place orders conversationally.
 
-2. **`magpie` CLI** — a standalone Python application for data collection, trade tracking, and running analyses programmatically on a schedule.
+2. **Magpie MCP Server** — a FastMCP server (`magpie-mcp` entry point) that exposes trade journal, rules, sync, and analysis tools directly to Claude Code. Configured in `.mcp.json` alongside the Alpaca MCP.
 
-The LLM (Claude Code) acts as the analysis brain. The CLI acts as the data and record-keeping layer. Both speak to Alpaca.
+3. **`magpie` CLI** — a standalone Python application for data collection, trade tracking, and running analyses programmatically on a schedule.
+
+The LLM (Claude Code) acts as the analysis brain. The CLI and MCP server act as the data and record-keeping layer. All three speak to Alpaca.
 
 ---
 
@@ -106,6 +108,27 @@ uv run magpie analyze run AAPL --hypothetical # Log as hypothetical trade (no or
 
 If `ANTHROPIC_API_KEY` is not set, the command prints the formatted prompt so you can paste it into Claude Code for interactive analysis via the Alpaca MCP server.
 
+### `magpie rules` — Trading Rules
+
+```bash
+uv run magpie rules list                           # Show active rules
+uv run magpie rules list --all                     # Include deactivated
+uv run magpie rules add sizing "Max 3 lots"        # Add a rule
+uv run magpie rules remove <rule-id>               # Deactivate (soft delete)
+uv run magpie rules remove <rule-id> --permanent   # Hard delete
+```
+
+Rules capture lessons learned from past trades and are automatically injected into LLM analysis prompts. Categories: `sizing`, `risk`, `entry`, `macro`, `execution`.
+
+### `magpie dashboard` — Visualization
+
+```bash
+uv run magpie dashboard                            # Opens http://localhost:8501
+uv run magpie dashboard --port 9000                # Custom port
+```
+
+Streamlit-based dashboard with four pages: equity & drawdown, payoff diagrams, Greeks exposure, and win rates.
+
 ### General
 
 ```bash
@@ -123,7 +146,7 @@ uv run python scripts/morning_scan.py
 
 # Scan positions for profit/stop/DTE targets (dry-run by default)
 uv run python scripts/manage_positions.py
-uv run python scripts/manage_positions.py --execute   # actually close
+uv run python scripts/manage_positions.py --execute    # actually close
 ```
 
 ---
@@ -186,13 +209,13 @@ src/magpie/
 ├── tracking/           Trade journal, position sync (with Greeks), P&L calculations
 ├── execution/          Risk checks, human review gate, order placement
 ├── dashboard/          Streamlit UI: equity, payoff, Greeks exposure, win rates
-└── cli/                Typer commands: analyze, journal, positions, report, dashboard
+├── mcp/                FastMCP server — exposes magpie tools for Claude Code
+└── cli/                Typer commands: analyze, journal, positions, report, rules, dashboard
 
 scripts/
 ├── sync_positions.py       Cron: sync Alpaca positions into DB
 ├── morning_scan.py         Cron: run analysis on watchlist
-├── manage_positions.py     Cron: check profit/stop/DTE targets
-└── monday_close_losers.py  Cron: close losing positions before Monday expiry
+└── manage_positions.py     Cron: check profit/stop/DTE targets
 
 data/
 └── magpie.sqlite       Local database (gitignored)
@@ -211,6 +234,7 @@ Key tables:
 - `prediction_accuracy` — rolling win rate by symbol, strategy, prompt version
 - `portfolio_snapshots` — daily equity curve
 - `market_regime_snapshots` — daily market regime (VIX, SPY trend, composite classification)
+- `trading_rules` — lessons learned from past trades, injected into analysis prompts
 - `watchlist` — symbols to scan
 
 Query the database directly:

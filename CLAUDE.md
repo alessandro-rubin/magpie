@@ -85,7 +85,7 @@ src/magpie/
 └── cli/
     ├── app.py          Typer root; runs DB migrations on startup
     ├── display.py      Shared Rich helpers (tables, panels, color styles)
-    └── commands/       analyze, journal, positions, report, rules, dashboard
+    └── commands/       analyze, journal, positions, report, rules
 ```
 
 ---
@@ -456,9 +456,6 @@ uv run python scripts/morning_scan.py
 
 # Every 30 minutes or at market close — check profit/stop/DTE targets
 uv run python scripts/manage_positions.py
-
-# Once per day near market close — auto-close positions hitting Monday expiry risk
-uv run python scripts/monday_close_losers.py
 ```
 
 ---
