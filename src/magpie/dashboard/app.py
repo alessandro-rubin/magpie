@@ -12,10 +12,11 @@ if "db_initialized" not in st.session_state:
 
     get_connection()
     st.session_state.db_initialized = True
+st.logo("src/magpie/dashboard/logo/magpie-logo.png",size="large",icon_image="src/magpie/dashboard/logo/magpie-logo.png")
 
 st.set_page_config(
     page_title="Magpie Dashboard",
-    page_icon=":bird:",
+    page_icon=str(Path(__file__).parent / "logo" / "magpie-icon-cropped.PNG"),
     layout="wide",
 )
 
