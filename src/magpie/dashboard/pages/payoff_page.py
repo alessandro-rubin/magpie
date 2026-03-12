@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -39,8 +40,15 @@ for _, row in df.iterrows():
     trade_options[label] = {
         "legs": legs,
         "underlying_price": float(row["entry_underlying_price"])
-        if row.get("entry_underlying_price")
+        if pd.notna(row.get("entry_underlying_price"))
         else None,
+        "current_underlying_price": float(row["current_underlying_price"])
+        if pd.notna(row.get("current_underlying_price"))
+        else None,
+        "unrealized_pnl": float(row["unrealized_pnl"])
+        if pd.notna(row.get("unrealized_pnl"))
+        else None,
+        "updated_at": str(row["updated_at"])[:16] if pd.notna(row.get("updated_at")) else None,
         "id": row["id"],
     }
 
@@ -57,9 +65,11 @@ show_legs = st.sidebar.checkbox("Show individual legs", value=False)
 trade = trade_options[selected_label]
 legs = trade["legs"]
 underlying_price = trade["underlying_price"]
+current_price = trade["current_underlying_price"]
+unrealized_pnl = trade["unrealized_pnl"]
 
-# Compute payoff
-price_low, price_high = price_range_for_legs(legs, underlying_price)
+# Compute payoff — use current price for centering the chart if available
+price_low, price_high = price_range_for_legs(legs, current_price or underlying_price)
 prices = np.linspace(price_low, price_high, 500)
 pnl = compute_payoff(legs, prices)
 breakevens = find_breakevens(legs, price_low, price_high)
@@ -68,10 +78,19 @@ max_profit = float(pnl.max())
 max_loss = float(pnl.min())
 
 # Summary
-col1, col2, col3 = st.columns(3)
-col1.metric("Max Profit", f"${max_profit:,.0f}" if max_profit < 1e8 else "Unlimited")
-col2.metric("Max Loss", f"${max_loss:,.0f}")
-col3.metric("Breakeven(s)", ", ".join(f"${b:,.2f}" for b in breakevens) if breakevens else "N/A")
+extra_cols = (1 if current_price else 0) + (1 if unrealized_pnl is not None else 0)
+cols = st.columns(3 + extra_cols)
+cols[0].metric("Max Profit", f"${max_profit:,.0f}" if max_profit < 1e8 else "Unlimited")
+cols[1].metric("Max Loss", f"${max_loss:,.0f}")
+cols[2].metric("Breakeven(s)", ", ".join(f"${b:,.2f}" for b in breakevens) if breakevens else "N/A")
+ci = 3
+if unrealized_pnl is not None:
+    sync_hint = f"synced {trade['updated_at']}" if trade.get("updated_at") else "last sync"
+    cols[ci].metric("P&L if Closed Now", f"${unrealized_pnl:,.0f}", sync_hint)
+    ci += 1
+if current_price:
+    current_pnl_val = float(compute_payoff(legs, np.array([current_price]))[0])
+    cols[ci].metric("P&L at Expiry", f"${current_pnl_val:,.0f}", f"if stays @ ${current_price:.2f}")
 
 # Build chart
 fig = go.Figure()
@@ -125,7 +144,7 @@ for be in breakevens:
     fig.add_vline(x=be, line_dash="dash", line_color="white", opacity=0.5)
     fig.add_annotation(x=be, y=0, text=f"BE ${be:.2f}", showarrow=False, yshift=15)
 
-# Current price marker
+# Entry price marker
 if underlying_price:
     fig.add_vline(x=underlying_price, line_dash="dot", line_color="#ffab40", opacity=0.7)
     fig.add_annotation(
@@ -134,6 +153,29 @@ if underlying_price:
         text=f"Entry ${underlying_price:.2f}",
         showarrow=False,
         font={"color": "#ffab40"},
+    )
+
+# Current underlying price marker
+if current_price:
+    current_pnl = float(compute_payoff(legs, np.array([current_price]))[0])
+    fig.add_vline(x=current_price, line_dash="dash", line_color="#42a5f5", opacity=0.8)
+    fig.add_annotation(
+        x=current_price,
+        y=max_profit * 0.6,
+        text=f"Now ${current_price:.2f}",
+        showarrow=False,
+        font={"color": "#42a5f5"},
+    )
+    # Dot on the P&L curve at current price
+    fig.add_trace(
+        go.Scatter(
+            x=[current_price],
+            y=[current_pnl],
+            mode="markers",
+            marker={"color": "#42a5f5", "size": 10, "symbol": "diamond"},
+            name=f"Current P&L ${current_pnl:,.0f}",
+            showlegend=True,
+        )
     )
 
 fig.update_layout(

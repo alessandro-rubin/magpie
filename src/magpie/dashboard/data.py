@@ -192,7 +192,8 @@ def get_trades_with_legs_df() -> pd.DataFrame:
     return execute_df(
         """
         SELECT id, underlying_symbol, strategy_type, entry_price, status,
-               legs, entry_time, entry_underlying_price
+               legs, entry_time, entry_underlying_price, current_underlying_price,
+               unrealized_pnl, updated_at
         FROM trade_journal
         WHERE legs IS NOT NULL
         ORDER BY created_at DESC

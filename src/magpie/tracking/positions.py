@@ -75,6 +75,9 @@ def sync_from_alpaca() -> dict:
             _auto_close(trade)
             auto_closed += 1
 
+    # Phase 2.25: Update current underlying prices for open trades
+    _update_current_underlying_prices(open_trades)
+
     # Phase 2.5: Backfill entry Greeks for open trades missing them
     for trade in open_trades:
         if trade.entry_delta is not None or not trade.legs:
@@ -357,6 +360,50 @@ def _fetch_spread_greeks(legs: list[dict]) -> dict:
     except Exception:
         logger.warning("Could not fetch Greeks during auto-import", exc_info=True)
         return {}
+
+
+def _update_current_underlying_prices(open_trades: list) -> None:
+    """Fetch current underlying prices and store them on open trades.
+
+    Groups trades by underlying symbol to minimise API calls, then batch-updates.
+    """
+    symbols = {t.underlying_symbol for t in open_trades if t.underlying_symbol}
+    if not symbols:
+        return
+
+    try:
+        from magpie.market.stocks import get_snapshot
+
+        prices: dict[str, float] = {}
+        for sym in symbols:
+            try:
+                snap = get_snapshot(sym)
+                if snap and snap.get("price"):
+                    prices[sym] = snap["price"]
+            except Exception:
+                logger.debug("Could not fetch price for %s", sym, exc_info=True)
+
+        if not prices:
+            return
+
+        from magpie.db.connection import get_connection as _get_conn
+
+        conn = _get_conn()
+        for trade in open_trades:
+            price = prices.get(trade.underlying_symbol)
+            if price is not None:
+                conn.execute(
+                    """
+                    UPDATE trade_journal
+                    SET current_underlying_price = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    [price, trade.id],
+                )
+        conn.commit()
+        logger.info("Updated current underlying prices for %d symbols", len(prices))
+    except Exception:
+        logger.warning("Failed to update current underlying prices", exc_info=True)
 
 
 def sync_portfolio_snapshot() -> None:
