@@ -384,17 +384,26 @@ def rules_formatted() -> str:
 
 def main() -> None:
     """Run the Magpie MCP server."""
-    # Enable debug logging to stderr for MCP troubleshooting
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.WARNING,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         stream=sys.stderr,
     )
-    logger.debug("main: loading .env")
     from dotenv import load_dotenv
     load_dotenv()
-    logger.debug("main: starting MCP server")
-    mcp.run()
+
+    # Eagerly import heavy modules before starting the event loop.
+    # FastMCP runs sync tool functions in worker threads; if those threads
+    # trigger first-time imports (pandas, numpy, alpaca-py …) they deadlock
+    # on Python's import lock held by the main/asyncio thread.
+    import magpie.db.connection  # noqa: F401 — pandas, sqlite3
+    import magpie.tracking.journal  # noqa: F401
+    import magpie.tracking.positions  # noqa: F401
+    import magpie.tracking.rules  # noqa: F401
+    import magpie.analysis.feedback  # noqa: F401
+    import magpie.market.snapshots  # noqa: F401
+
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":
