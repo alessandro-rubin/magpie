@@ -25,3 +25,4 @@ uv.lock
 .claude/settings.local.json
 
 .vscode
+.continue/*
