@@ -152,6 +152,19 @@ class TradingRule:
 
 
 @dataclass
+class TradingNote:
+    id: str
+    category: str                           # 'deadline' | 'strategy' | 'observation' | 'portfolio'
+    title: str
+    content: str
+    source_trade_id: str | None = None
+    expires_at: datetime | None = None
+    resolved: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass
 class WatchlistEntry:
     symbol: str
     added_at: datetime | None = None

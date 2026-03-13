@@ -7,6 +7,7 @@ import pytest
 import magpie.db.connection as conn_mod
 import magpie.tracking.journal as journal_mod
 import magpie.tracking.positions as pos_mod
+import magpie.tracking.notes as notes_mod
 import magpie.analysis.feedback as feedback_mod
 from magpie.tracking.journal import (
     create_trade,
@@ -21,6 +22,7 @@ def _patch_db(db, monkeypatch):
     monkeypatch.setattr(conn_mod, "get_connection", lambda: db)
     monkeypatch.setattr(journal_mod, "get_connection", lambda: db)
     monkeypatch.setattr(feedback_mod, "get_connection", lambda: db)
+    monkeypatch.setattr(notes_mod, "get_connection", lambda: db)
 
 
 def _create_analysis(db, analysis_id, symbol, linked_trade_id=None, was_correct=None):

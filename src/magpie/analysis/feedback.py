@@ -374,7 +374,16 @@ def get_combined_feedback(
     if rules_text:
         combined["rules_text"] = rules_text
         narratives.append(rules_text)
-        combined["narrative"] = "\n\n".join(narratives) if narratives else ""
+
+    # Inject trading notes (persistent memory)
+    from magpie.tracking.notes import format_notes_for_prompt
+
+    notes_text = format_notes_for_prompt()
+    if notes_text:
+        combined["notes_text"] = notes_text
+        narratives.append(notes_text)
+
+    combined["narrative"] = "\n\n".join(narratives) if narratives else ""
 
     return combined
 

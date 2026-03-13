@@ -379,6 +379,77 @@ def rules_formatted() -> str:
     return text or "No trading rules defined yet."
 
 
+# ── Trading Notes Tools ──────────────────────────────────────────────────
+
+
+@mcp.tool()
+def notes_list(category: str | None = None, include_resolved: bool = False) -> list[dict]:
+    """List trading notes (persistent memory across sessions).
+
+    Categories: deadline, strategy, observation, portfolio.
+    Active notes are auto-injected into feedback prompts.
+    """
+    _init_db()
+    from magpie.tracking.notes import list_notes
+
+    notes = list_notes(category=category, active_only=not include_resolved)
+    return [
+        {
+            "id": n.id,
+            "category": n.category,
+            "title": n.title,
+            "content": n.content,
+            "source_trade_id": n.source_trade_id,
+            "expires_at": str(n.expires_at) if n.expires_at else None,
+            "resolved": n.resolved,
+        }
+        for n in notes
+    ]
+
+
+@mcp.tool()
+def notes_add(
+    category: str,
+    title: str,
+    content: str,
+    source_trade_id: str | None = None,
+    expires_at: str | None = None,
+) -> str:
+    """Add a trading note. Category: deadline, strategy, observation, portfolio.
+
+    Use expires_at (ISO format, e.g. '2026-03-19') for deadline notes.
+    Notes are auto-injected into every feedback/analysis prompt.
+    """
+    _init_db()
+    from magpie.tracking.notes import add_note
+
+    note_id = add_note(
+        category=category, title=title, content=content,
+        source_trade_id=source_trade_id, expires_at=expires_at,
+    )
+    return f"Note added: {note_id}"
+
+
+@mcp.tool()
+def notes_resolve(note_id: str) -> str:
+    """Mark a trading note as resolved (e.g. deadline acted on, observation no longer relevant)."""
+    _init_db()
+    from magpie.tracking.notes import resolve_note
+
+    ok = resolve_note(note_id)
+    return f"Resolved note {note_id[:8]}." if ok else f"Note '{note_id}' not found."
+
+
+@mcp.tool()
+def notes_remove(note_id: str) -> str:
+    """Permanently delete a trading note."""
+    _init_db()
+    from magpie.tracking.notes import delete_note
+
+    ok = delete_note(note_id)
+    return f"Deleted note {note_id[:8]}." if ok else f"Note '{note_id}' not found."
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 
@@ -400,6 +471,7 @@ def main() -> None:
     import magpie.tracking.journal  # noqa: F401
     import magpie.tracking.positions  # noqa: F401
     import magpie.tracking.rules  # noqa: F401
+    import magpie.tracking.notes  # noqa: F401
     import magpie.analysis.feedback  # noqa: F401
     import magpie.market.snapshots  # noqa: F401
 
