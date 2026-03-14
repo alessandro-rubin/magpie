@@ -26,9 +26,16 @@ class Settings(BaseSettings):
         description="Alpaca base URL",
     )
 
+    # LLM provider (anthropic or groq)
+    llm_provider: str = Field("anthropic", description="LLM provider: 'anthropic' or 'groq'")
+
     # Anthropic (optional — only needed for standalone CLI analysis)
     anthropic_api_key: str | None = Field(None, description="Anthropic API key")
-    anthropic_model: str = Field("claude-opus-4-6", description="Model to use for analysis")
+    anthropic_model: str = Field("claude-opus-4-6", description="Anthropic model to use for analysis")
+
+    # Groq (optional — alternative LLM provider)
+    groq_api_key: str | None = Field(None, description="Groq API key")
+    groq_model: str = Field("llama-3.3-70b-versatile", description="Groq model to use for analysis")
 
     # Database
     magpie_db_path: Path = Field(Path("./data/magpie.sqlite"), description="SQLite file path")
@@ -51,6 +58,18 @@ class Settings(BaseSettings):
     magpie_min_dte_close: int = Field(
         3, ge=0, le=30, description="Close positions with DTE at or below this (gamma risk)"
     )
+
+    # Autonomous agent loop
+    magpie_auto_trade_max_cost: float = Field(
+        0.0, ge=0.0, description="Max trade cost ($) for auto-execution (0 = always require human approval)"
+    )
+    magpie_agent_interval: int = Field(
+        1800, ge=60, description="Agent scan interval in seconds (default 30 min)"
+    )
+
+    # HTTP API server (for OpenClaw skill integration)
+    magpie_api_port: int = Field(8080, description="HTTP API server port")
+    magpie_api_key: str | None = Field(None, description="Local API auth key (None = no auth required)")
 
 
 def _load_settings() -> Settings:

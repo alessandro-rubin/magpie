@@ -1,0 +1,108 @@
+# Magpie Trading Skill for OpenClaw
+#
+# This skill exposes Magpie's options trading capabilities to the OpenClaw
+# autonomous AI agent. The OpenClaw Gateway routes tool calls to the Magpie
+# HTTP API server (run with: uv run magpie-api).
+#
+# Setup:
+#   1. Start the Magpie API: uv run magpie-api
+#   2. Install this skill in OpenClaw: openclaw skills install ./skills/magpie/
+#   3. Optionally set gateway_url if running on a non-default port
+#
+# See: https://github.com/openclaw/openclaw for skill specification details.
+
+name: magpie-trading
+version: "1.0.0"
+description: >
+  AI-powered options trading system backed by Alpaca paper trading.
+  Analyzes stocks for options opportunities, tracks the trade journal,
+  manages positions, and supports hybrid-autonomous execution with
+  human-in-the-loop approval for larger trades.
+
+author: magpie
+license: MIT
+
+gateway_url: "http://127.0.0.1:8080"
+
+# Optional: set X-API-Key header if MAGPIE_API_KEY is configured
+# headers:
+#   X-API-Key: "your-key-here"
+
+tools:
+  - name: analyze_symbol
+    description: >
+      Analyze a stock symbol using the configured LLM (Anthropic Claude or Groq)
+      and return an options trading recommendation with strategy, confidence,
+      entry/stop/target prices, and reasoning. The result is persisted to the
+      trade journal for feedback loop tracking.
+    method: POST
+    path: /analyze
+    input_schema:
+      type: object
+      properties:
+        symbol:
+          type: string
+          description: Stock ticker symbol (e.g. AAPL, TSLA, SPY)
+      required:
+        - symbol
+
+  - name: get_portfolio
+    description: >
+      Return the current portfolio summary: account equity, buying power,
+      number of open positions, and trades pending human approval.
+    method: GET
+    path: /portfolio
+
+  - name: get_positions
+    description: List all currently open trades from the trade journal.
+    method: GET
+    path: /positions
+
+  - name: sync_positions
+    description: >
+      Sync Alpaca positions with the local trade journal: update unrealized P&L,
+      backfill Greeks, auto-close trades whose legs are gone, and import new
+      unmatched positions.
+    method: POST
+    path: /sync
+
+  - name: get_pending_trades
+    description: >
+      List all trades that the autonomous agent has queued for human approval.
+      These are "enter" recommendations that exceeded the auto-trade cost limit
+      or failed risk checks.
+    method: GET
+    path: /pending
+
+  - name: approve_trade
+    description: >
+      Approve a pending trade and place the order via Alpaca. Optionally specify
+      a limit price; otherwise uses the LLM's suggested entry price.
+    method: POST
+    path: /approve/{trade_id}
+    path_params:
+      - name: trade_id
+        description: Full or prefix of the trade ID from get_pending_trades
+    input_schema:
+      type: object
+      properties:
+        trade_id:
+          type: string
+          description: Trade ID to approve
+        limit_price:
+          type: number
+          description: Optional limit price override for the order
+
+  - name: reject_trade
+    description: Reject and cancel a pending trade without placing any order.
+    method: POST
+    path: /reject/{trade_id}
+    path_params:
+      - name: trade_id
+        description: Full or prefix of the trade ID from get_pending_trades
+    input_schema:
+      type: object
+      properties:
+        trade_id:
+          type: string
+          description: Trade ID to reject

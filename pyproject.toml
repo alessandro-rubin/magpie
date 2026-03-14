@@ -9,6 +9,7 @@ dependencies = [
     "alpaca-py>=0.38.0",
     # LLM
     "anthropic>=0.40.0",
+    "groq>=0.11.0",
     # Database: sqlite3 is in stdlib, pandas for execute_df
     # Config & validation
     "pydantic>=2.10.0",
@@ -30,11 +31,16 @@ dependencies = [
     "numpy>=2.0.0",
     # MCP server
     "fastmcp>=2.0.0",
+    # HTTP API server (OpenClaw skill backend)
+    "fastapi>=0.110.0",
+    "uvicorn>=0.30.0",
 ]
 
 [project.scripts]
 magpie = "magpie.cli.app:app"
 magpie-mcp = "magpie.mcp.server:main"
+magpie-api = "magpie.agent.api:main"
+magpie-agent = "magpie.agent.loop:main"
 
 [build-system]
 requires = ["hatchling"]

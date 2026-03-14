@@ -1,6 +1,10 @@
-"""Claude API integration — run analysis and persist results.
+"""LLM API integration — run analysis and persist results.
 
-If ANTHROPIC_API_KEY is not set, run_analysis() raises AnthropicKeyMissing.
+Supports multiple providers via LLM_PROVIDER setting:
+  - "anthropic" (default): Claude models via Anthropic SDK
+  - "groq": Llama/Mixtral models via Groq SDK (openai-compatible)
+
+If the configured provider's API key is not set, run_analysis() raises LLMKeyMissing.
 The CLI handles this by printing the formatted prompt for manual use in Claude Code.
 """
 
@@ -20,15 +24,19 @@ from magpie.analysis.prompts import (
 from magpie.db.models import LLMAnalysis
 
 
-class AnthropicKeyMissing(RuntimeError):
-    """Raised when ANTHROPIC_API_KEY is not configured."""
+class LLMKeyMissing(RuntimeError):
+    """Raised when the configured LLM provider's API key is not set."""
 
 
-def _get_client():  # type: ignore[return]
+# Backward-compat alias
+AnthropicKeyMissing = LLMKeyMissing
+
+
+def _get_anthropic_client():  # type: ignore[return]
     from magpie.config import settings
 
     if not settings.anthropic_api_key:
-        raise AnthropicKeyMissing(
+        raise LLMKeyMissing(
             "ANTHROPIC_API_KEY is not set. "
             "Add it to .env to enable standalone analysis, "
             "or use Claude Code interactively with the Alpaca MCP server."
@@ -39,14 +47,22 @@ def _get_client():  # type: ignore[return]
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=15),
-    retry=retry_if_not_exception_type(AnthropicKeyMissing),
-)
-def _call_api(model: str, prompt: str) -> str:
-    """Call the Claude API and return the raw text response."""
-    client = _get_client()
+def _get_groq_client():  # type: ignore[return]
+    from magpie.config import settings
+
+    if not settings.groq_api_key:
+        raise LLMKeyMissing(
+            "GROQ_API_KEY is not set. "
+            "Add it to .env when using LLM_PROVIDER=groq."
+        )
+
+    from groq import Groq
+
+    return Groq(api_key=settings.groq_api_key)
+
+
+def _call_api_anthropic(model: str, prompt: str) -> str:
+    client = _get_anthropic_client()
     message = client.messages.create(
         model=model,
         max_tokens=1024,
@@ -54,6 +70,33 @@ def _call_api(model: str, prompt: str) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     return message.content[0].text
+
+
+def _call_api_groq(model: str, prompt: str) -> str:
+    client = _get_groq_client()
+    response = client.chat.completions.create(
+        model=model,
+        max_tokens=1024,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return response.choices[0].message.content
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=15),
+    retry=retry_if_not_exception_type(LLMKeyMissing),
+)
+def _call_api(model: str, prompt: str) -> str:
+    """Call the configured LLM provider and return the raw text response."""
+    from magpie.config import settings
+
+    if settings.llm_provider == "groq":
+        return _call_api_groq(model, prompt)
+    return _call_api_anthropic(model, prompt)
 
 
 def _parse_response(raw: str) -> dict:
@@ -95,7 +138,8 @@ def run_analysis(
     """
     Run a full LLM analysis for a symbol and persist the result to the DB.
 
-    Raises AnthropicKeyMissing if ANTHROPIC_API_KEY is not configured.
+    Uses the provider configured via LLM_PROVIDER (default: anthropic).
+    Raises LLMKeyMissing if the provider's API key is not configured.
     In that case, use build_prompt() to get the prompt text for manual use.
     """
     from magpie.analysis.feedback import get_combined_feedback
@@ -109,7 +153,7 @@ def run_analysis(
         feedback_summary=feedback_summary,
     )
 
-    model = settings.anthropic_model
+    model = settings.groq_model if settings.llm_provider == "groq" else settings.anthropic_model
     raw_response = _call_api(model=model, prompt=prompt)
     parsed = _parse_response(raw_response)
 

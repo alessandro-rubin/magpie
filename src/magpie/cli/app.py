@@ -38,13 +38,14 @@ def main(
 
 # ── Sub-command groups ──────────────────────────────────────────────────────
 
-from magpie.cli.commands import analyze, journal, positions, report, rules  # noqa: E402
+from magpie.cli.commands import agent, analyze, journal, positions, report, rules  # noqa: E402
 
 app.add_typer(analyze.app, name="analyze", help="LLM analysis of a symbol.")
 app.add_typer(journal.app, name="journal", help="View and manage the trade journal.")
 app.add_typer(positions.app, name="positions", help="View and sync Alpaca positions.")
 app.add_typer(report.app, name="report", help="P&L and LLM accuracy reports.")
 app.add_typer(rules.app, name="rules", help="Manage trading rules (lessons learned).")
+app.add_typer(agent.app, name="agent", help="Autonomous agent loop and pending trade approvals.")
 
 
 @app.command()
