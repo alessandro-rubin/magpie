@@ -1,3 +1,49 @@
+- [Magpie — Claude Code Guide](#magpie--claude-code-guide)
+  - [Project purpose](#project-purpose)
+  - [MCP Servers](#mcp-servers)
+    - [Alpaca MCP Server (market data \& orders)](#alpaca-mcp-server-market-data--orders)
+    - [Magpie MCP Server (journal, rules, sync, analysis)](#magpie-mcp-server-journal-rules-sync-analysis)
+  - [Architecture](#architecture)
+  - [LLM providers](#llm-providers)
+  - [Autonomous agent loop](#autonomous-agent-loop)
+  - [HTTP API server](#http-api-server)
+  - [OpenClaw skill integration](#openclaw-skill-integration)
+  - [Database (SQLite)](#database-sqlite)
+  - [Key patterns](#key-patterns)
+    - [Adding a watchlist symbol](#adding-a-watchlist-symbol)
+    - [Creating a hypothetical trade entry](#creating-a-hypothetical-trade-entry)
+    - [Closing a trade and recording the outcome](#closing-a-trade-and-recording-the-outcome)
+    - [Auto-linking analyses to trades](#auto-linking-analyses-to-trades)
+    - [Building market context for analysis](#building-market-context-for-analysis)
+  - [Positions sync \& OCC symbols](#positions-sync--occ-symbols)
+    - [OCC symbol format](#occ-symbol-format)
+    - [How sync works](#how-sync-works)
+    - [Legs JSON format](#legs-json-format)
+  - [Greeks on trades](#greeks-on-trades)
+  - [Trade rationale](#trade-rationale)
+  - [Feedback loop](#feedback-loop)
+    - [Outcome marking](#outcome-marking)
+  - [Trading rules](#trading-rules)
+    - [Categories](#categories)
+    - [Usage](#usage)
+    - [How it integrates](#how-it-integrates)
+  - [Market regime](#market-regime)
+    - [Data sources](#data-sources)
+    - [Classification](#classification)
+    - [How it integrates](#how-it-integrates-1)
+  - [Position management](#position-management)
+  - [Risk controls](#risk-controls)
+  - [Prompt versioning](#prompt-versioning)
+  - [Dashboard](#dashboard)
+  - [Scripts](#scripts)
+  - [What requires an LLM API key](#what-requires-an-llm-api-key)
+  - [Development](#development)
+  - [Roadmap / TODOs](#roadmap--todos)
+    - [Medium priority](#medium-priority)
+    - [Low priority](#low-priority)
+    - [Done](#done)
+
+
 # Magpie — Claude Code Guide
 
 ## Project purpose
@@ -61,9 +107,12 @@ src/magpie/
 │   ├── options.py      Option chains, individual snapshots, Greeks
 │   ├── occ.py          OCC option symbol parser (e.g. AAPL260320C00275000)
 │   └── snapshots.py    Assembles full context dict for LLM analysis
+├── agent/
+│   ├── loop.py         Autonomous agent — scans watchlist, analyzes, auto-trades
+│   └── api.py          FastAPI HTTP server for OpenClaw and external integrations
 ├── analysis/
 │   ├── prompts.py      Versioned prompt templates — bump PROMPT_VERSION on changes
-│   ├── llm.py          Claude API integration (optional — requires ANTHROPIC_API_KEY)
+│   ├── llm.py          Multi-provider LLM integration (Anthropic Claude or Groq)
 │   ├── feedback.py     Queries DB → computes win rates → formats for prompt injection
 │   └── regime.py       Market regime: VIX (Yahoo Finance), SPY trend, classification
 ├── tracking/
@@ -82,11 +131,123 @@ src/magpie/
 │   └── pages/          equity, payoff_page, greeks, winrate
 ├── mcp/
 │   └── server.py       FastMCP server — exposes magpie tools for Claude Code
+├── skills/
+│   └── magpie/
+│       └── skill.yaml  OpenClaw skill manifest mapping HTTP API → tool definitions
 └── cli/
     ├── app.py          Typer root; runs DB migrations on startup
     ├── display.py      Shared Rich helpers (tables, panels, color styles)
-    └── commands/       analyze, journal, positions, report, rules
+    └── commands/       analyze, journal, positions, report, rules, agent
 ```
+
+---
+
+## LLM providers
+
+`analysis/llm.py` supports multiple LLM backends via the `LLM_PROVIDER` setting. Provider dispatch happens in `_call_api()`, which routes to the appropriate SDK.
+
+| Provider | Setting | Key env var | Default model | SDK |
+|---|---|---|---|---|
+| Anthropic (default) | `LLM_PROVIDER=anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-6` | `anthropic` |
+| Groq | `LLM_PROVIDER=groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | `groq` (OpenAI-compatible) |
+
+Configure in `.env`:
+
+```ini
+LLM_PROVIDER=groq          # or "anthropic" (default)
+GROQ_API_KEY=gsk_...       # required when provider=groq
+GROQ_MODEL=llama-3.3-70b-versatile  # optional override
+```
+
+If the configured provider's API key is missing, `run_analysis()` raises `LLMKeyMissing` (aliased as `AnthropicKeyMissing` for backward compat). The CLI falls back to printing the prompt for manual use in Claude Code.
+
+---
+
+## Autonomous agent loop
+
+`agent/loop.py` implements a continuously running agent that scans the watchlist, runs LLM analysis on each symbol, and executes or queues trades based on a hybrid autonomy model.
+
+**Entry points:**
+
+```bash
+uv run magpie-agent                        # standalone entry point
+uv run magpie agent start                  # via CLI
+uv run magpie agent start --interval 900   # custom 15-min interval
+```
+
+**How it works:**
+
+1. Fetches the watchlist from DB
+2. For each symbol: builds market context → runs LLM analysis → checks for "enter" recommendation
+3. Runs `risk.py:run_all_checks()` on the proposed trade
+4. **Auto-executes** if `cost <= MAGPIE_AUTO_TRADE_MAX_COST` and risk checks pass
+5. **Queues for approval** (`status='pending_approval'`) if cost exceeds the limit or risk checks fail
+
+**Configuration (`.env`):**
+
+```ini
+MAGPIE_AUTO_TRADE_MAX_COST=0.0   # max $ for auto-execution (0 = always require approval)
+MAGPIE_AGENT_INTERVAL=1800       # scan interval in seconds (default 30 min)
+```
+
+**Pending trade management:**
+
+```bash
+uv run magpie agent pending                # list trades awaiting approval
+uv run magpie agent approve <trade-id>     # approve and place order
+uv run magpie agent approve <id> -l 4.50   # approve with limit price override
+uv run magpie agent reject <trade-id>      # reject (marks cancelled)
+```
+
+Graceful shutdown on SIGTERM/SIGINT — completes the current scan cycle before exiting.
+
+---
+
+## HTTP API server
+
+`agent/api.py` is a FastAPI server that exposes Magpie tools as REST endpoints. It serves as the backend for OpenClaw skill integration and any HTTP-based agent framework.
+
+**Entry point:**
+
+```bash
+uv run magpie-api                          # starts on http://127.0.0.1:8080
+```
+
+**Endpoints:**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | Health check |
+| GET | `/portfolio` | Account equity, buying power, open/pending counts |
+| POST | `/analyze` | Run LLM analysis on a symbol (body: `{"symbol": "AAPL"}`) |
+| GET | `/positions` | List open trades |
+| POST | `/sync` | Sync Alpaca positions with journal |
+| GET | `/pending` | List trades awaiting approval |
+| POST | `/approve/{trade_id}` | Approve pending trade, place order (optional `limit_price`) |
+| POST | `/reject/{trade_id}` | Reject pending trade |
+
+**Authentication:** optional `X-API-Key` header. Set `MAGPIE_API_KEY` in `.env` to require it; leave unset for no auth.
+
+**Configuration (`.env`):**
+
+```ini
+MAGPIE_API_PORT=8080       # server port
+MAGPIE_API_KEY=            # optional API key (empty = no auth)
+```
+
+---
+
+## OpenClaw skill integration
+
+The `skills/magpie/skill.yaml` file defines an OpenClaw skill manifest that maps the HTTP API endpoints to OpenClaw tool definitions. This allows OpenClaw's autonomous agent gateway to call Magpie tools.
+
+**Setup:**
+
+1. Start the Magpie API: `uv run magpie-api`
+2. Install the skill in OpenClaw: `openclaw skills install ./skills/magpie/`
+3. Optionally configure `gateway_url` in `skill.yaml` if using a non-default port
+
+**Exposed tools:** `analyze_symbol`, `get_portfolio`, `get_positions`, `sync_positions`, `get_pending_trades`, `approve_trade`, `reject_trade`
 
 ---
 
@@ -445,7 +606,16 @@ All queries live in `dashboard/data.py` with `@st.cache_data(ttl=60)`. Payoff ma
 
 ## Scripts
 
-Run on a schedule during trading hours:
+**Entry points** (defined in `pyproject.toml`):
+
+| Command | Module | Purpose |
+|---|---|---|
+| `uv run magpie` | `magpie.cli.app:app` | Main CLI (Typer) |
+| `uv run magpie-mcp` | `magpie.mcp.server:main` | MCP server for Claude Code |
+| `uv run magpie-api` | `magpie.agent.api:main` | HTTP API server (FastAPI) |
+| `uv run magpie-agent` | `magpie.agent.loop:main` | Autonomous agent loop |
+
+**Scheduled scripts** (run during trading hours):
 
 ```bash
 # Every 15 minutes during market hours — sync positions, update P&L, auto-close
@@ -456,15 +626,25 @@ uv run python scripts/morning_scan.py
 
 # Every 30 minutes or at market close — check profit/stop/DTE targets
 uv run python scripts/manage_positions.py
+
+# Standalone agent and API launchers
+uv run python scripts/run_agent.py
+uv run python scripts/run_api.py
 ```
 
 ---
 
-## What requires ANTHROPIC_API_KEY
+## What requires an LLM API key
 
-The `analysis/llm.py` module calls the Claude API directly for standalone (non-interactive) analysis. This is **optional** — if the key is not set, the `magpie analyze` command will display the market context and prompt text so you can paste it into Claude Code instead.
+The `analysis/llm.py` module calls the configured LLM provider (Anthropic or Groq) for standalone analysis. This is needed by:
 
-All other CLI commands (journal, positions, report, sync) work without any API key.
+- `magpie analyze` CLI command
+- The autonomous agent loop (`magpie-agent` / `magpie agent start`)
+- The `/analyze` HTTP API endpoint
+
+If the key is not set, the `magpie analyze` CLI falls back to printing the prompt for manual use in Claude Code. The agent loop and API will return errors.
+
+All other CLI commands (journal, positions, report, sync, rules, agent pending/approve/reject) work without any API key.
 
 ---
 
@@ -496,6 +676,10 @@ Tests use an in-memory SQLite fixture (`tests/conftest.py`) — no real API call
 
 ### Done
 
+- **Groq LLM provider** — multi-provider support in `analysis/llm.py`. Set `LLM_PROVIDER=groq` + `GROQ_API_KEY` to use Llama/Mixtral via Groq instead of Anthropic Claude. See "LLM providers" section.
+- **Autonomous agent loop** — `agent/loop.py` scans watchlist on interval, runs LLM analysis, auto-executes small trades, queues larger ones for approval. CLI: `magpie agent start/pending/approve/reject`. See "Autonomous agent loop" section.
+- **HTTP API server** — FastAPI server in `agent/api.py` exposing Magpie tools as REST endpoints. Entry point `magpie-api`. See "HTTP API server" section.
+- **OpenClaw skill integration** — `skills/magpie/skill.yaml` maps HTTP API to OpenClaw tool definitions for agentic gateway integration. See "OpenClaw skill integration" section.
 - **Trading rules system** — `trading_rules` table, CRUD in `tracking/rules.py`, CLI commands (`magpie rules`), injected into feedback loop and analysis prompts. See "Trading rules" section above.
 - **Magpie MCP server** — FastMCP server exposing journal, rules, sync, and analysis tools. Entry point `magpie-mcp`, registered in `.mcp.json`. See "MCP Servers" section above.
 - **SQLite migration** — migrated from DuckDB to SQLite with WAL mode. Resolves deadlock issues when MCP server and CLI/sync scripts access the DB concurrently. All SQL uses SQLite syntax (`datetime('now')`, `INTEGER` for booleans, `REAL` for decimals). Migration script at `scripts/migrate_duckdb_to_sqlite.py`.
