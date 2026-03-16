@@ -1,3 +1,22 @@
+- [magpie](#magpie)
+  - [Overview](#overview)
+  - [Prerequisites](#prerequisites)
+  - [Setup](#setup)
+  - [CLI Commands](#cli-commands)
+    - [`magpie journal` — Trade Diary](#magpie-journal--trade-diary)
+    - [`magpie positions` — Live Position View \& Management](#magpie-positions--live-position-view--management)
+    - [`magpie report` — P\&L + LLM Accuracy](#magpie-report--pl--llm-accuracy)
+    - [`magpie analyze` — Market Analysis](#magpie-analyze--market-analysis)
+    - [`magpie rules` — Trading Rules](#magpie-rules--trading-rules)
+    - [`magpie dashboard` — Visualization](#magpie-dashboard--visualization)
+    - [General](#general)
+  - [Workflow](#workflow)
+  - [Project Structure](#project-structure)
+  - [Database](#database)
+  - [Running Tests](#running-tests)
+  - [Options Strategies Supported](#options-strategies-supported)
+  - [Notes](#notes)
+
 # magpie
 
 LLM-powered options trading system using Alpaca paper trading.
