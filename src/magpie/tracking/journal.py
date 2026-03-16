@@ -39,7 +39,7 @@ def create_trade(
             entry_underlying_price, dte_at_entry,
             max_profit, max_loss, breakeven_price,
             alpaca_order_id, alpaca_position_id, tags, notes,
-            entry_rationale
+            entry_rationale, fill_price
         ) VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?,
@@ -48,21 +48,39 @@ def create_trade(
             ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
-            ?
+            ?, ?
         )
         """,
         [
-            trade_id, now, now, trade_mode, status,
-            underlying_symbol.upper(), asset_class, kwargs.get("strategy_type"),
-            kwargs.get("entry_time", now), kwargs.get("entry_price"), quantity,
-            kwargs.get("entry_commission", 0.0), legs_json,
-            kwargs.get("entry_iv"), kwargs.get("entry_delta"),
-            kwargs.get("entry_theta"), kwargs.get("entry_vega"), kwargs.get("entry_gamma"),
-            kwargs.get("entry_underlying_price"), kwargs.get("dte_at_entry"),
-            kwargs.get("max_profit"), kwargs.get("max_loss"), kwargs.get("breakeven_price"),
-            kwargs.get("alpaca_order_id"), kwargs.get("alpaca_position_id"),
-            tags_json, kwargs.get("notes"),
+            trade_id,
+            now,
+            now,
+            trade_mode,
+            status,
+            underlying_symbol.upper(),
+            asset_class,
+            kwargs.get("strategy_type"),
+            kwargs.get("entry_time", now),
+            kwargs.get("entry_price"),
+            quantity,
+            kwargs.get("entry_commission", 0.0),
+            legs_json,
+            kwargs.get("entry_iv"),
+            kwargs.get("entry_delta"),
+            kwargs.get("entry_theta"),
+            kwargs.get("entry_vega"),
+            kwargs.get("entry_gamma"),
+            kwargs.get("entry_underlying_price"),
+            kwargs.get("dte_at_entry"),
+            kwargs.get("max_profit"),
+            kwargs.get("max_loss"),
+            kwargs.get("breakeven_price"),
+            kwargs.get("alpaca_order_id"),
+            kwargs.get("alpaca_position_id"),
+            tags_json,
+            kwargs.get("notes"),
             kwargs.get("entry_rationale"),
+            kwargs.get("fill_price"),
         ],
     )
     conn.commit()
@@ -89,8 +107,16 @@ def update_trade_status(
             updated_at = datetime('now')
         WHERE id = ?
         """,
-        [status, exit_price, exit_time, exit_reason, realized_pnl, realized_pnl_pct,
-         exit_rationale, trade_id],
+        [
+            status,
+            exit_price,
+            exit_time,
+            exit_reason,
+            realized_pnl,
+            realized_pnl_pct,
+            exit_rationale,
+            trade_id,
+        ],
     )
     conn.commit()
 
@@ -154,10 +180,7 @@ def find_linked_analyses(trade_id: str) -> list[dict]:
         """,
         [trade_id],
     ).fetchall()
-    return [
-        {"id": r[0], "was_correct": r[1], "symbol": r[2], "strategy": r[3]}
-        for r in rows
-    ]
+    return [{"id": r[0], "was_correct": r[1], "symbol": r[2], "strategy": r[3]} for r in rows]
 
 
 def find_unlinked_analysis(symbol: str) -> str | None:
@@ -214,7 +237,7 @@ def list_trades(
                entry_underlying_price, dte_at_entry,
                max_profit, max_loss, breakeven_price,
                alpaca_order_id, alpaca_position_id, tags, notes,
-               entry_rationale, exit_rationale
+               entry_rationale, exit_rationale, fill_price
         FROM trade_journal {where}
         ORDER BY created_at DESC
         LIMIT ?
@@ -238,7 +261,7 @@ def get_trade(trade_id_prefix: str) -> TradeJournalEntry | None:
                entry_underlying_price, dte_at_entry,
                max_profit, max_loss, breakeven_price,
                alpaca_order_id, alpaca_position_id, tags, notes,
-               entry_rationale, exit_rationale
+               entry_rationale, exit_rationale, fill_price
         FROM trade_journal
         WHERE id LIKE ?
         LIMIT 1
@@ -290,4 +313,5 @@ def _row_to_entry(row: tuple) -> TradeJournalEntry:
         notes=row[33],
         entry_rationale=row[34],
         exit_rationale=row[35],
+        fill_price=float(row[36]) if row[36] is not None else None,
     )

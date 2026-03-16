@@ -664,18 +664,18 @@ Tests use an in-memory SQLite fixture (`tests/conftest.py`) — no real API call
 
 ### Medium priority
 
-- **Slippage tracking** — compare `entry_price` on journal to actual Alpaca fill price. Add `fill_price` column to `trade_journal`, compute slippage at sync time. Useful to measure execution quality.
-- **Regime snapshot at analysis time** — store the `market_regime` dict in `llm_analyses.context_snapshot` so retrospective analysis can see what regime the LLM saw when it made the recommendation.
 - **Trade timeline / decision audit page** — new dashboard page showing a timeline per trade: analysis → entry → P&L updates → exit, with rationale at each step. Data already exists across `llm_analyses` + `trade_journal`.
 
 ### Low priority
 
-- **Watchlist CLI management** — `magpie watchlist add/remove/list` commands. Table exists, just needs CLI wiring.
 - **Prompt A/B testing infrastructure** — run two prompt versions in parallel on the same symbols, compare outcomes. Requires splitting `PROMPT_VERSION` into concurrent tracks.
-- **Test coverage gaps** — add tests for LLM response parsing edge cases (`_parse_response` in `llm.py`) and risk check logic (`execution/risk.py`).
 
 ### Done
 
+- **Regime snapshot at analysis time** — `build_analysis_context()` includes `market_regime` in the context dict, and `run_analysis()` stores the full context as `context_snapshot` in `llm_analyses`. Retrospective queries can access the regime the LLM saw at recommendation time.
+- **Watchlist CLI management** — `magpie watchlist add/remove/list` commands. See CLI commands section.
+- **Slippage tracking** — `fill_price` column on `trade_journal`, populated from Alpaca `avg_entry_price` during sync. Slippage computed as `fill_price - entry_price`.
+- **Test coverage** — tests for `_parse_response` (LLM output parsing edge cases) and `execution/risk.py` (position size and daily loss checks).
 - **Groq LLM provider** — multi-provider support in `analysis/llm.py`. Set `LLM_PROVIDER=groq` + `GROQ_API_KEY` to use Llama/Mixtral via Groq instead of Anthropic Claude. See "LLM providers" section.
 - **Autonomous agent loop** — `agent/loop.py` scans watchlist on interval, runs LLM analysis, auto-executes small trades, queues larger ones for approval. CLI: `magpie agent start/pending/approve/reject`. See "Autonomous agent loop" section.
 - **HTTP API server** — FastAPI server in `agent/api.py` exposing Magpie tools as REST endpoints. Entry point `magpie-api`. See "HTTP API server" section.

@@ -75,6 +75,9 @@ def sync_from_alpaca() -> dict:
             _auto_close(trade)
             auto_closed += 1
 
+    # Phase 2.1: Backfill fill_price from Alpaca avg_entry_price for slippage tracking
+    _backfill_fill_prices(open_trades, alpaca_by_contract)
+
     # Phase 2.25: Update current underlying prices for open trades
     _update_current_underlying_prices(open_trades)
 
@@ -107,9 +110,7 @@ def sync_from_alpaca() -> dict:
 
     # Phase 3: Auto-import unmatched Alpaca positions
     unmatched = {
-        sym: pos
-        for sym, pos in alpaca_by_contract.items()
-        if sym not in matched_contracts
+        sym: pos for sym, pos in alpaca_by_contract.items() if sym not in matched_contracts
     }
     imported = _import_unmatched_positions(unmatched) if unmatched else 0
 
@@ -173,7 +174,9 @@ def _mark_analysis_outcomes(trade_id: str, realized_pnl: float | None) -> None:
             )
             logger.info(
                 "Marked analysis %s outcome: was_correct=%s (P&L: %s)",
-                analysis["id"][:8], was_correct, pnl_str,
+                analysis["id"][:8],
+                was_correct,
+                pnl_str,
             )
     except Exception:
         logger.warning("Failed to mark analysis outcomes for trade %s", trade_id, exc_info=True)
@@ -216,6 +219,7 @@ def _import_unmatched_positions(unmatched: dict[str, Any]) -> int:
             quantity=abs(qty),
             status="open",
             entry_price=avg_price,
+            fill_price=avg_price,
             entry_time=datetime.now(timezone.utc),
             legs=[{"contract_symbol": symbol, "quantity": qty, "premium": avg_price or 0}],
             entry_rationale="Auto-imported from Alpaca sync",
@@ -267,6 +271,7 @@ def _import_unmatched_positions(unmatched: dict[str, Any]) -> int:
             strategy_type=strategy,
             entry_time=datetime.now(timezone.utc),
             entry_price=entry_price,
+            fill_price=entry_price,  # At import time, Alpaca avg_entry_price IS the fill
             dte_at_entry=dte,
             legs=legs,
             entry_rationale=f"Auto-imported from Alpaca sync ({len(legs)} leg{'s' if len(legs) != 1 else ''}, {expiry})",
@@ -362,6 +367,57 @@ def _fetch_spread_greeks(legs: list[dict]) -> dict:
         return {}
 
 
+def _backfill_fill_prices(open_trades: list, alpaca_by_contract: dict[str, Any]) -> None:
+    """Backfill fill_price from Alpaca avg_entry_price for trades missing it.
+
+    For spreads, computes the net fill price across legs (same logic as
+    _import_unmatched_positions: sum(avg_entry_price * qty * 100) / (100 * ref_qty)).
+    """
+    from magpie.db.connection import get_connection as _get_conn
+
+    conn = _get_conn()
+    updated = 0
+
+    for trade in open_trades:
+        if trade.fill_price is not None:
+            continue  # Already populated
+        if not trade.legs:
+            # Legacy trade: try direct symbol match
+            pos = alpaca_by_contract.get(trade.underlying_symbol)
+            if pos and pos.avg_entry_price:
+                conn.execute(
+                    "UPDATE trade_journal SET fill_price = ?, updated_at = datetime('now') WHERE id = ?",
+                    [float(pos.avg_entry_price), trade.id],
+                )
+                updated += 1
+            continue
+
+        # Spread: compute net fill from leg avg_entry_prices
+        net_cost = 0.0
+        has_fill_data = False
+        for leg in trade.legs:
+            cs = leg.get("contract_symbol")
+            if not cs:
+                continue
+            pos = alpaca_by_contract.get(cs)
+            if pos and pos.avg_entry_price:
+                has_fill_data = True
+                qty = int(pos.qty) if pos.qty else leg.get("quantity", 1)
+                net_cost += float(pos.avg_entry_price) * qty * 100
+
+        if has_fill_data and trade.quantity:
+            fill_price = abs(net_cost) / (100 * trade.quantity)
+            conn.execute(
+                "UPDATE trade_journal SET fill_price = ?, updated_at = datetime('now') WHERE id = ?",
+                [fill_price, trade.id],
+            )
+            updated += 1
+
+    if updated:
+        conn.commit()
+        logger.info("Backfilled fill_price for %d trades", updated)
+
+
 def _update_current_underlying_prices(open_trades: list) -> None:
     """Fetch current underlying prices and store them on open trades.
 
@@ -418,9 +474,7 @@ def sync_portfolio_snapshot() -> None:
     buying_power = float(account.buying_power) if account.buying_power else None
 
     positions = client.get_all_positions()
-    unrealized_total = sum(
-        float(p.unrealized_pl) for p in positions if p.unrealized_pl is not None
-    )
+    unrealized_total = sum(float(p.unrealized_pl) for p in positions if p.unrealized_pl is not None)
 
     conn = get_connection()
     today = date.today()

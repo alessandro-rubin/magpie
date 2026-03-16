@@ -10,10 +10,10 @@ from typing import Any
 @dataclass
 class TradeJournalEntry:
     id: str
-    trade_mode: str                         # 'paper' | 'hypothetical' | 'live'
-    status: str                             # 'pending_review' | 'approved' | 'open' | 'closed' | 'expired'
+    trade_mode: str  # 'paper' | 'hypothetical' | 'live'
+    status: str  # 'pending_review' | 'approved' | 'open' | 'closed' | 'expired'
     underlying_symbol: str
-    asset_class: str                        # 'option' | 'stock' | 'crypto'
+    asset_class: str  # 'option' | 'stock' | 'crypto'
     quantity: int
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -53,6 +53,8 @@ class TradeJournalEntry:
     # Rationale (captured at entry/exit for retrospective analysis)
     entry_rationale: str | None = None
     exit_rationale: str | None = None
+    # Slippage tracking
+    fill_price: float | None = None
 
 
 @dataclass
@@ -66,7 +68,7 @@ class LLMAnalysis:
     raw_response: str
     created_at: datetime | None = None
     past_performance_summary: dict[str, Any] | None = None
-    recommendation: str | None = None       # 'enter' | 'avoid' | 'exit' | 'hold' | 'reduce'
+    recommendation: str | None = None  # 'enter' | 'avoid' | 'exit' | 'hold' | 'reduce'
     confidence_score: float | None = None
     strategy_suggested: str | None = None
     reasoning_summary: str | None = None
@@ -81,11 +83,11 @@ class LLMAnalysis:
 
 @dataclass
 class OptionContract:
-    contract_id: str                        # OCC symbol
+    contract_id: str  # OCC symbol
     underlying_symbol: str
     expiration_date: date
     strike_price: float
-    option_type: str                        # 'call' | 'put'
+    option_type: str  # 'call' | 'put'
     multiplier: int = 100
     style: str = "american"
     created_at: datetime | None = None
@@ -127,9 +129,9 @@ class PortfolioSnapshot:
 @dataclass
 class MarketRegimeSnapshot:
     snapshot_date: date
-    trend_regime: str               # 'bullish' | 'neutral' | 'bearish'
-    volatility_regime: str          # 'low' | 'normal' | 'high'
-    composite_regime: str           # e.g. 'bullish_low_vol'
+    trend_regime: str  # 'bullish' | 'neutral' | 'bearish'
+    volatility_regime: str  # 'low' | 'normal' | 'high'
+    composite_regime: str  # e.g. 'bullish_low_vol'
     vix_level: float | None = None
     vix_source: str | None = None
     spy_price: float | None = None
@@ -143,7 +145,7 @@ class MarketRegimeSnapshot:
 @dataclass
 class TradingRule:
     id: str
-    category: str                           # 'sizing' | 'risk' | 'entry' | 'macro' | 'execution'
+    category: str  # 'sizing' | 'risk' | 'entry' | 'macro' | 'execution'
     rule: str
     source_trade_id: str | None = None
     active: bool = True
@@ -154,7 +156,7 @@ class TradingRule:
 @dataclass
 class TradingNote:
     id: str
-    category: str                           # 'deadline' | 'strategy' | 'observation' | 'portfolio'
+    category: str  # 'deadline' | 'strategy' | 'observation' | 'portfolio'
     title: str
     content: str
     source_trade_id: str | None = None
