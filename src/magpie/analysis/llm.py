@@ -12,7 +12,16 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+
+
+def _json_default(obj: object) -> str:
+    """Handle datetime/date objects in json.dumps."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
@@ -201,8 +210,8 @@ def _persist_analysis(analysis: LLMAnalysis) -> None:
             analysis.analysis_type,
             analysis.model,
             analysis.prompt_version,
-            json.dumps(analysis.context_snapshot),
-            json.dumps(analysis.past_performance_summary) if analysis.past_performance_summary else None,
+            json.dumps(analysis.context_snapshot, default=_json_default),
+            json.dumps(analysis.past_performance_summary, default=_json_default) if analysis.past_performance_summary else None,
             analysis.raw_response,
             analysis.recommendation,
             analysis.confidence_score,
