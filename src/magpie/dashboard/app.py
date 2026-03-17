@@ -24,6 +24,7 @@ _pages_dir = Path(__file__).parent / "pages"
 
 pages = [
     st.Page(str(_pages_dir / "equity.py"), title="Equity & Drawdown", icon=":material/show_chart:"),
+    st.Page(str(_pages_dir / "journal.py"), title="Journal", icon=":material/menu_book:"),
     st.Page(
         str(_pages_dir / "payoff_page.py"),
         title="Payoff Diagrams",

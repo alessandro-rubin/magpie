@@ -193,10 +193,40 @@ def get_trades_with_legs_df() -> pd.DataFrame:
         """
         SELECT id, underlying_symbol, strategy_type, entry_price, status,
                legs, entry_time, entry_underlying_price, current_underlying_price,
-               unrealized_pnl, updated_at
+               unrealized_pnl, realized_pnl, updated_at
         FROM trade_journal
         WHERE legs IS NOT NULL
         ORDER BY created_at DESC
+        """
+    )
+
+
+@st.cache_data(ttl=60)
+def get_trading_notes_df(include_resolved: bool = False) -> pd.DataFrame:
+    """Trading notes for the journal page."""
+    where = "1=1" if include_resolved else "resolved = 0"
+    return execute_df(
+        f"""
+        SELECT id, category, title, content, source_trade_id,
+               expires_at, resolved, created_at
+        FROM trading_notes
+        WHERE {where}
+        ORDER BY created_at DESC
+        """
+    )
+
+
+@st.cache_data(ttl=60)
+def get_trading_rules_df(include_inactive: bool = False) -> pd.DataFrame:
+    """Trading rules for the journal page."""
+    where = "1=1" if include_inactive else "active = 1"
+    return execute_df(
+        f"""
+        SELECT id, category, rule, source_trade_id,
+               active, created_at
+        FROM trading_rules
+        WHERE {where}
+        ORDER BY category, created_at DESC
         """
     )
 

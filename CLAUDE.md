@@ -40,6 +40,7 @@
   - [Development](#development)
   - [Roadmap / TODOs](#roadmap--todos)
     - [Medium priority](#medium-priority)
+    - [Quant / ML explorations](#quant--ml-explorations)
     - [Low priority](#low-priority)
     - [Done](#done)
 
@@ -665,6 +666,15 @@ Tests use an in-memory SQLite fixture (`tests/conftest.py`) — no real API call
 ### Medium priority
 
 - **Trade timeline / decision audit page** — new dashboard page showing a timeline per trade: analysis → entry → P&L updates → exit, with rationale at each step. Data already exists across `llm_analyses` + `trade_journal`.
+
+### Quant / ML explorations
+
+- **Realized vs. implied volatility signal** — compute 20-day rolling realized vol from daily bars, compare to chain IV. When IV >> RV, premium-selling strategies have edge. Data already available via Alpaca bars + options chain; just needs the computation layer and prompt integration.
+- **Feature → trade outcome model** — train a classifier (logistic regression or gradient-boosted tree) on trade features: IV rank, delta, DTE, regime, VIX, strategy type → win/loss. Use `trade_journal` + `llm_analyses` as training data. Output a "quant confidence score" injected alongside the LLM recommendation.
+- **IV surface & term structure tracking** — auto-save option snapshots on every sync to build history. Construct IV surfaces (strike × expiry), track term structure slope, detect mispricing vs. realized vol.
+- **LLM prediction calibration** — plot calibration curves from `llm_analyses` confidence scores vs. actual outcomes. Use to weight or override LLM recommendations as the dataset grows.
+- **Time series embeddings + LLM reasoning** — encode price/vol history into embeddings (PatchTST or small transformer), inject summary statistics into the LLM prompt. LLM handles narrative reasoning, time series model handles pattern recognition.
+- **HMM / clustering regime detection** — replace the rule-based regime classifier with a Hidden Markov Model or k-means on [VIX, SPY momentum, breadth, correlation]. Yields more nuanced states and transition probabilities.
 
 ### Low priority
 

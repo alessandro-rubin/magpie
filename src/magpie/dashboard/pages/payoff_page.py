@@ -48,8 +48,12 @@ for _, row in df.iterrows():
         "unrealized_pnl": float(row["unrealized_pnl"])
         if pd.notna(row.get("unrealized_pnl"))
         else None,
+        "realized_pnl": float(row["realized_pnl"])
+        if pd.notna(row.get("realized_pnl"))
+        else None,
         "updated_at": str(row["updated_at"])[:16] if pd.notna(row.get("updated_at")) else None,
         "id": row["id"],
+        "status": row["status"],
     }
 
 if not trade_options:
@@ -67,6 +71,8 @@ legs = trade["legs"]
 underlying_price = trade["underlying_price"]
 current_price = trade["current_underlying_price"]
 unrealized_pnl = trade["unrealized_pnl"]
+realized_pnl = trade["realized_pnl"]
+is_closed = trade["status"] == "closed"
 
 # Compute payoff — use current price for centering the chart if available
 price_low, price_high = price_range_for_legs(legs, current_price or underlying_price)
@@ -78,19 +84,31 @@ max_profit = float(pnl.max())
 max_loss = float(pnl.min())
 
 # Summary
-extra_cols = (1 if current_price else 0) + (1 if unrealized_pnl is not None else 0)
+if is_closed:
+    pnl_col = 1 if realized_pnl is not None else 0
+    extra_cols = (1 if current_price else 0) + pnl_col
+else:
+    extra_cols = (1 if current_price else 0) + (1 if unrealized_pnl is not None else 0)
 cols = st.columns(3 + extra_cols)
 cols[0].metric("Max Profit", f"${max_profit:,.0f}" if max_profit < 1e8 else "Unlimited")
 cols[1].metric("Max Loss", f"${max_loss:,.0f}")
 cols[2].metric("Breakeven(s)", ", ".join(f"${b:,.2f}" for b in breakevens) if breakevens else "N/A")
 ci = 3
-if unrealized_pnl is not None:
-    sync_hint = f"synced {trade['updated_at']}" if trade.get("updated_at") else "last sync"
-    cols[ci].metric("P&L if Closed Now", f"${unrealized_pnl:,.0f}", sync_hint)
-    ci += 1
-if current_price:
-    current_pnl_val = float(compute_payoff(legs, np.array([current_price]))[0])
-    cols[ci].metric("P&L at Expiry", f"${current_pnl_val:,.0f}", f"if stays @ ${current_price:.2f}")
+if is_closed:
+    if realized_pnl is not None:
+        cols[ci].metric("Realized P&L", f"${realized_pnl:,.0f}")
+        ci += 1
+    if current_price:
+        current_pnl_val = float(compute_payoff(legs, np.array([current_price]))[0])
+        cols[ci].metric("P&L at Expiry", f"${current_pnl_val:,.0f}", f"exit @ ${current_price:.2f}")
+else:
+    if unrealized_pnl is not None:
+        sync_hint = f"synced {trade['updated_at']}" if trade.get("updated_at") else "last sync"
+        cols[ci].metric("Unrealized P&L", f"${unrealized_pnl:,.0f}", sync_hint)
+        ci += 1
+    if current_price:
+        current_pnl_val = float(compute_payoff(legs, np.array([current_price]))[0])
+        cols[ci].metric("P&L at Expiry", f"${current_pnl_val:,.0f}", f"if stays @ ${current_price:.2f}")
 
 # Build chart
 fig = go.Figure()
@@ -155,25 +173,27 @@ if underlying_price:
         font={"color": "#ffab40"},
     )
 
-# Current underlying price marker
+# Current / exit underlying price marker
 if current_price:
     current_pnl = float(compute_payoff(legs, np.array([current_price]))[0])
+    price_label = f"Exit ${current_price:.2f}" if is_closed else f"Now ${current_price:.2f}"
+    dot_label = f"Exit P&L ${current_pnl:,.0f}" if is_closed else f"Current P&L ${current_pnl:,.0f}"
     fig.add_vline(x=current_price, line_dash="dash", line_color="#42a5f5", opacity=0.8)
     fig.add_annotation(
         x=current_price,
         y=max_profit * 0.6,
-        text=f"Now ${current_price:.2f}",
+        text=price_label,
         showarrow=False,
         font={"color": "#42a5f5"},
     )
-    # Dot on the P&L curve at current price
+    # Dot on the P&L curve at current/exit price
     fig.add_trace(
         go.Scatter(
             x=[current_price],
             y=[current_pnl],
             mode="markers",
             marker={"color": "#42a5f5", "size": 10, "symbol": "diamond"},
-            name=f"Current P&L ${current_pnl:,.0f}",
+            name=dot_label,
             showlegend=True,
         )
     )
