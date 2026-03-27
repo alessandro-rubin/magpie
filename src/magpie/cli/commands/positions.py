@@ -116,23 +116,27 @@ def manage(
                 except Exception:
                     continue
 
-        # Profit target
+        # Profit target (per-trade override or global default)
         if trade.max_profit and unrealized is not None:
-            target = trade.max_profit * settings.magpie_profit_target_pct
+            profit_pct = trade.profit_target_pct if trade.profit_target_pct is not None else settings.magpie_profit_target_pct
+            target = trade.max_profit * profit_pct
+            override_tag = " (trade override)" if trade.profit_target_pct is not None else ""
             if unrealized >= target:
                 actions.append({
                     "trade": trade, "action": "close_profit", "reason": "target_hit",
-                    "details": f"P&L ${unrealized:+,.0f} >= {settings.magpie_profit_target_pct*100:.0f}% of max ${trade.max_profit:,.0f}",
+                    "details": f"P&L ${unrealized:+,.0f} >= {profit_pct*100:.0f}% of max ${trade.max_profit:,.0f}{override_tag}",
                 })
                 continue
 
-        # Stop loss
+        # Stop loss (per-trade override or global default)
         if trade.max_loss and unrealized is not None:
-            stop = trade.max_loss * settings.magpie_stop_loss_pct
+            stop_pct = trade.stop_loss_pct if trade.stop_loss_pct is not None else settings.magpie_stop_loss_pct
+            stop = trade.max_loss * stop_pct
+            override_tag = " (trade override)" if trade.stop_loss_pct is not None else ""
             if unrealized <= -stop:
                 actions.append({
                     "trade": trade, "action": "close_stop", "reason": "stop_loss",
-                    "details": f"P&L ${unrealized:+,.0f} hit stop -${stop:,.0f}",
+                    "details": f"P&L ${unrealized:+,.0f} hit stop -${stop:,.0f}{override_tag}",
                 })
                 continue
 

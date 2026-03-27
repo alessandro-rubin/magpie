@@ -55,6 +55,9 @@ class TradeJournalEntry:
     exit_rationale: str | None = None
     # Slippage tracking
     fill_price: float | None = None
+    # Per-trade risk thresholds (None = use global defaults)
+    profit_target_pct: float | None = None
+    stop_loss_pct: float | None = None
 
 
 @dataclass

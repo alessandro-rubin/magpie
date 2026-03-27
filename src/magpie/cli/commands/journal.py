@@ -79,6 +79,8 @@ def show_trade(trade_id: str = typer.Argument(..., help="Trade ID (or prefix).")
         ("DTE at Entry", str(trade.dte_at_entry) if trade.dte_at_entry else "—"),
         ("Max Profit", format_currency(trade.max_profit)),
         ("Max Loss", format_currency(trade.max_loss)),
+        ("Profit Target %", f"{trade.profit_target_pct*100:.0f}%" if trade.profit_target_pct is not None else "— (global)"),
+        ("Stop Loss %", f"{trade.stop_loss_pct*100:.0f}%" if trade.stop_loss_pct is not None else "— (global)"),
         ("Notes", trade.notes or "—"),
         ("Entry rationale", trade.entry_rationale or "—"),
         ("Exit rationale", trade.exit_rationale or "—"),

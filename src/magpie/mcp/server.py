@@ -64,6 +64,8 @@ def journal_list(
             "entry_rationale": t.entry_rationale,
             "exit_rationale": t.exit_rationale,
             "exit_reason": t.exit_reason,
+            "profit_target_pct": t.profit_target_pct,
+            "stop_loss_pct": t.stop_loss_pct,
         }
         for t in trades
     ]
@@ -100,6 +102,8 @@ def journal_show(trade_id: str) -> dict | str:
         "dte_at_entry": trade.dte_at_entry,
         "max_profit": trade.max_profit,
         "max_loss": trade.max_loss,
+        "profit_target_pct": trade.profit_target_pct,
+        "stop_loss_pct": trade.stop_loss_pct,
         "entry_rationale": trade.entry_rationale,
         "exit_rationale": trade.exit_rationale,
         "exit_reason": trade.exit_reason,
@@ -124,8 +128,14 @@ def journal_create(
     legs: list[dict] | None = None,
     entry_rationale: str | None = None,
     alpaca_order_id: str | None = None,
+    profit_target_pct: float | None = None,
+    stop_loss_pct: float | None = None,
 ) -> str:
-    """Create a new trade journal entry. Returns the trade ID."""
+    """Create a new trade journal entry. Returns the trade ID.
+
+    profit_target_pct/stop_loss_pct override global defaults for this trade
+    (e.g., 0.50 = close at 50% of max profit; 1.25 = stop at 125% of credit received).
+    """
     _init_db()
     from magpie.tracking.journal import create_trade
 
@@ -146,6 +156,8 @@ def journal_create(
         legs=legs,
         entry_rationale=entry_rationale,
         alpaca_order_id=alpaca_order_id,
+        profit_target_pct=profit_target_pct,
+        stop_loss_pct=stop_loss_pct,
     )
     return trade_id
 
@@ -239,22 +251,26 @@ def manage_positions(execute: bool = False, sync_first: bool = True) -> list[dic
                     continue
 
         if trade.max_profit and unrealized is not None:
-            target = trade.max_profit * settings.magpie_profit_target_pct
+            profit_pct = trade.profit_target_pct if trade.profit_target_pct is not None else settings.magpie_profit_target_pct
+            target = trade.max_profit * profit_pct
+            override_tag = " (trade override)" if trade.profit_target_pct is not None else ""
             if unrealized >= target:
                 actions.append({
                     "trade_id": trade.id, "symbol": trade.underlying_symbol,
                     "action": "close_profit", "reason": "target_hit",
-                    "details": f"P&L ${unrealized:+,.0f} >= {settings.magpie_profit_target_pct*100:.0f}% of max ${trade.max_profit:,.0f}",
+                    "details": f"P&L ${unrealized:+,.0f} >= {profit_pct*100:.0f}% of max ${trade.max_profit:,.0f}{override_tag}",
                 })
                 continue
 
         if trade.max_loss and unrealized is not None:
-            stop = trade.max_loss * settings.magpie_stop_loss_pct
+            stop_pct = trade.stop_loss_pct if trade.stop_loss_pct is not None else settings.magpie_stop_loss_pct
+            stop = trade.max_loss * stop_pct
+            override_tag = " (trade override)" if trade.stop_loss_pct is not None else ""
             if unrealized <= -stop:
                 actions.append({
                     "trade_id": trade.id, "symbol": trade.underlying_symbol,
                     "action": "close_stop", "reason": "stop_loss",
-                    "details": f"P&L ${unrealized:+,.0f} hit stop -${stop:,.0f}",
+                    "details": f"P&L ${unrealized:+,.0f} hit stop -${stop:,.0f}{override_tag}",
                 })
                 continue
 

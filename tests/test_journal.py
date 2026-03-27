@@ -69,6 +69,46 @@ def test_trade_rationale(db, monkeypatch):
     assert trade.exit_rationale == "Spread hit 80% of max profit with 10 DTE; closing to lock in gains."
 
 
+def test_per_trade_targets(db, monkeypatch):
+    """Per-trade profit_target_pct and stop_loss_pct should round-trip."""
+    import magpie.tracking.journal as journal_mod
+
+    monkeypatch.setattr(journal_mod, "get_connection", lambda: db)
+
+    trade_id = journal_mod.create_trade(
+        trade_mode="paper",
+        underlying_symbol="AAPL",
+        asset_class="option",
+        quantity=2,
+        status="open",
+        profit_target_pct=0.30,
+        stop_loss_pct=1.25,
+    )
+    trade = journal_mod.get_trade(trade_id)
+    assert trade is not None
+    assert trade.profit_target_pct == pytest.approx(0.30)
+    assert trade.stop_loss_pct == pytest.approx(1.25)
+
+
+def test_per_trade_targets_default_none(db, monkeypatch):
+    """When not set, per-trade targets should be None."""
+    import magpie.tracking.journal as journal_mod
+
+    monkeypatch.setattr(journal_mod, "get_connection", lambda: db)
+
+    trade_id = journal_mod.create_trade(
+        trade_mode="paper",
+        underlying_symbol="AAPL",
+        asset_class="option",
+        quantity=1,
+        status="open",
+    )
+    trade = journal_mod.get_trade(trade_id)
+    assert trade is not None
+    assert trade.profit_target_pct is None
+    assert trade.stop_loss_pct is None
+
+
 def test_list_trades_filter(db, monkeypatch):
     """Filtering by status and symbol should work correctly."""
     import magpie.tracking.journal as journal_mod

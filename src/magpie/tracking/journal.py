@@ -39,7 +39,8 @@ def create_trade(
             entry_underlying_price, dte_at_entry,
             max_profit, max_loss, breakeven_price,
             alpaca_order_id, alpaca_position_id, tags, notes,
-            entry_rationale, fill_price
+            entry_rationale, fill_price,
+            profit_target_pct, stop_loss_pct
         ) VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?,
@@ -48,6 +49,7 @@ def create_trade(
             ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
+            ?, ?,
             ?, ?
         )
         """,
@@ -81,6 +83,8 @@ def create_trade(
             kwargs.get("notes"),
             kwargs.get("entry_rationale"),
             kwargs.get("fill_price"),
+            kwargs.get("profit_target_pct"),
+            kwargs.get("stop_loss_pct"),
         ],
     )
     conn.commit()
@@ -237,7 +241,8 @@ def list_trades(
                entry_underlying_price, dte_at_entry,
                max_profit, max_loss, breakeven_price,
                alpaca_order_id, alpaca_position_id, tags, notes,
-               entry_rationale, exit_rationale, fill_price
+               entry_rationale, exit_rationale, fill_price,
+               profit_target_pct, stop_loss_pct
         FROM trade_journal {where}
         ORDER BY created_at DESC
         LIMIT ?
@@ -261,7 +266,8 @@ def get_trade(trade_id_prefix: str) -> TradeJournalEntry | None:
                entry_underlying_price, dte_at_entry,
                max_profit, max_loss, breakeven_price,
                alpaca_order_id, alpaca_position_id, tags, notes,
-               entry_rationale, exit_rationale, fill_price
+               entry_rationale, exit_rationale, fill_price,
+               profit_target_pct, stop_loss_pct
         FROM trade_journal
         WHERE id LIKE ?
         LIMIT 1
@@ -314,4 +320,6 @@ def _row_to_entry(row: tuple) -> TradeJournalEntry:
         entry_rationale=row[34],
         exit_rationale=row[35],
         fill_price=float(row[36]) if row[36] is not None else None,
+        profit_target_pct=float(row[37]) if row[37] is not None else None,
+        stop_loss_pct=float(row[38]) if row[38] is not None else None,
     )
