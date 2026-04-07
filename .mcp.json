@@ -3,11 +3,12 @@
     "alpaca": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["alpaca-mcp-server", "serve"],
+      "args": ["alpaca-mcp-server"],
       "env": {
         "ALPACA_API_KEY": "${ALPACA_API_KEY}",
         "ALPACA_SECRET_KEY": "${ALPACA_SECRET_KEY}",
-        "ALPACA_PAPER": "true"
+        "ALPACA_PAPER": "true",
+        "PYTHONUTF8":"1"
       }
     },
     "magpie": {
