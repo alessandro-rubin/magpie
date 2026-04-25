@@ -29,6 +29,8 @@ dependencies = [
     "streamlit>=1.40.0",
     "plotly>=5.24.0",
     "numpy>=2.0.0",
+    # PydanticAI agent framework
+    "pydantic-ai>=0.1.0",
     # MCP server
     "fastmcp>=2.0.0",
     # HTTP API server (OpenClaw skill backend)
@@ -41,6 +43,7 @@ magpie = "magpie.cli.app:app"
 magpie-mcp = "magpie.mcp.server:main"
 magpie-api = "magpie.agent.api:main"
 magpie-agent = "magpie.agent.loop:main"
+magpie-pydantic-agent = "magpie.agent.pydantic_agent:main"
 
 [build-system]
 requires = ["hatchling"]
