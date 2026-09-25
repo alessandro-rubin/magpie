@@ -150,14 +150,15 @@ src/magpie/
 | Provider | Setting | Key env var | Default model | SDK |
 |---|---|---|---|---|
 | Anthropic (default) | `LLM_PROVIDER=anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-6` | `anthropic` |
-| Groq | `LLM_PROVIDER=groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | `groq` (OpenAI-compatible) |
+| Groq | `LLM_PROVIDER=groq` | `GROQ_API_KEY` | `openai/gpt-oss-120b` | `groq` (OpenAI-compatible) |
 
 Configure in `.env`:
 
 ```ini
 LLM_PROVIDER=groq          # or "anthropic" (default)
 GROQ_API_KEY=gsk_...       # required when provider=groq
-GROQ_MODEL=llama-3.3-70b-versatile  # optional override
+GROQ_MODEL=openai/gpt-oss-120b    # optional override
+GROQ_REASONING_EFFORT=medium       # gpt-oss only: low / medium / high
 ```
 
 If the configured provider's API key is missing, `run_analysis()` raises `LLMKeyMissing` (aliased as `AnthropicKeyMissing` for backward compat). The CLI falls back to printing the prompt for manual use in Claude Code.
@@ -180,9 +181,12 @@ uv run magpie agent start --interval 900   # custom 15-min interval
 
 1. Fetches the watchlist from DB
 2. For each symbol: builds market context → runs LLM analysis → checks for "enter" recommendation
-3. Runs `risk.py:run_all_checks()` on the proposed trade
-4. **Auto-executes** if `cost <= MAGPIE_AUTO_TRADE_MAX_COST` and risk checks pass
-5. **Queues for approval** (`status='pending_approval'`) if cost exceeds the limit or risk checks fail
+3. Resolves the LLM's legs to quoted OCC contracts (`loop.py:resolve_legs()` — chain mids, else live snapshot; any malformed/unquoted leg skips the trade). Entry price = net premium from those quotes; cost = max loss at expiry (`payoff.py:max_loss()`), not the LLM's numbers
+4. Runs `risk.py:run_all_checks()` on the proposed trade
+5. **Auto-executes** if `cost <= MAGPIE_AUTO_TRADE_MAX_COST` and risk checks pass
+6. **Queues for approval** (`status='pending_approval'`) if cost exceeds the limit or risk checks fail
+
+**Multi-leg limit price sign:** Alpaca mleg orders use positive = net debit, negative = net credit. A positive limit on a credit spread is a debit cap and fills like a market order. `journal.entry_price` stays a positive magnitude; `orders.py:signed_limit_price()` applies the sign from the leg structure (used by approve in CLI, API, and auto-execute). The same applies when placing orders through the Alpaca MCP.
 
 **Configuration (`.env`):**
 
@@ -572,7 +576,7 @@ The `execution/review.py` confirmation panel shows risk check results.
 
 ## Prompt versioning
 
-`analysis/prompts.py` contains `PROMPT_VERSION = "v1.1"`. Bump this whenever the system prompt or analysis template changes. This allows you to compare prediction accuracy before and after prompt changes using:
+`analysis/prompts.py` contains `PROMPT_VERSION = "v1.2"`. Bump this whenever the system prompt or analysis template changes. This allows you to compare prediction accuracy before and after prompt changes using:
 
 ```sql
 SELECT prompt_version, AVG(CASE WHEN was_correct THEN 1.0 ELSE 0.0 END) as win_rate
@@ -686,7 +690,7 @@ Tests use an in-memory SQLite fixture (`tests/conftest.py`) — no real API call
 - **Watchlist CLI management** — `magpie watchlist add/remove/list` commands. See CLI commands section.
 - **Slippage tracking** — `fill_price` column on `trade_journal`, populated from Alpaca `avg_entry_price` during sync. Slippage computed as `fill_price - entry_price`.
 - **Test coverage** — tests for `_parse_response` (LLM output parsing edge cases) and `execution/risk.py` (position size and daily loss checks).
-- **Groq LLM provider** — multi-provider support in `analysis/llm.py`. Set `LLM_PROVIDER=groq` + `GROQ_API_KEY` to use Llama/Mixtral via Groq instead of Anthropic Claude. See "LLM providers" section.
+- **Groq LLM provider** — multi-provider support in `analysis/llm.py`. Set `LLM_PROVIDER=groq` + `GROQ_API_KEY` to use open-weight models (gpt-oss) via Groq instead of Anthropic Claude. See "LLM providers" section.
 - **Autonomous agent loop** — `agent/loop.py` scans watchlist on interval, runs LLM analysis, auto-executes small trades, queues larger ones for approval. CLI: `magpie agent start/pending/approve/reject`. See "Autonomous agent loop" section.
 - **HTTP API server** — FastAPI server in `agent/api.py` exposing Magpie tools as REST endpoints. Entry point `magpie-api`. See "HTTP API server" section.
 - **OpenClaw skill integration** — `skills/magpie/skill.yaml` maps HTTP API to OpenClaw tool definitions for agentic gateway integration. See "OpenClaw skill integration" section.

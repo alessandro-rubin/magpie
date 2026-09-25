@@ -340,11 +340,11 @@ def get_combined_feedback(
     analysis_stats = compute_accuracy_stats(symbol=symbol, window_days=window_days)
     trade_stats = compute_trade_performance(symbol=symbol, window_days=window_days)
 
-    if not analysis_stats and not trade_stats:
-        return {}
-
-    # Build combined narrative
+    # Build combined narrative. Rules and notes are injected even with no recent
+    # trades — they are standing instructions, not performance stats.
     narratives = []
+    if not analysis_stats and not trade_stats:
+        narratives.append(f"No closed trades in the last {window_days} days.")
     if analysis_stats and analysis_stats.get("narrative"):
         narratives.append(f"[LLM Analysis Track Record] {analysis_stats['narrative']}")
     if trade_stats and trade_stats.get("narrative"):
@@ -382,6 +382,9 @@ def get_combined_feedback(
     if notes_text:
         combined["notes_text"] = notes_text
         narratives.append(notes_text)
+
+    if not analysis_stats and not trade_stats and not rules_text and not notes_text:
+        return {}
 
     combined["narrative"] = "\n\n".join(narratives) if narratives else ""
 

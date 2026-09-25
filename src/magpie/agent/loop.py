@@ -76,8 +76,8 @@ class AgentLoop:
             client = get_trading_client()
             account = client.get_account()
             equity = float(account.equity)
-            # Approximate daily P&L from change_today
-            daily_pnl = float(getattr(account, "equity_previous_close", equity) or equity) - equity
+            # Daily P&L vs. previous close (negative = loss, as check_daily_loss expects)
+            daily_pnl = equity - float(account.last_equity or equity)
         except Exception as exc:
             logger.warning("Could not fetch account info: %s — skipping cycle", exc)
             return
@@ -120,8 +120,17 @@ class AgentLoop:
             logger.info("%s: no entry signal — skipping", symbol)
             return
 
-        legs = self._extract_legs(analysis)
-        cost = self._estimate_cost(analysis, equity)
+        from magpie.analysis.llm import _parse_response
+        from magpie.execution.orders import net_premium
+
+        llm_legs = _parse_response(analysis.raw_response or "").get("legs") or []
+        legs = resolve_legs(symbol, llm_legs, context)
+        if not legs:
+            logger.warning("%s: could not resolve suggested legs to quoted contracts — skipping", symbol)
+            return
+
+        entry_price = round(abs(net_premium(legs)), 2)
+        cost = self._estimate_cost(legs)
 
         risk = run_all_checks(
             trade_cost=cost,
@@ -132,30 +141,24 @@ class AgentLoop:
         auto_limit = settings.magpie_auto_trade_max_cost
         if risk.passed and auto_limit > 0 and cost <= auto_limit:
             logger.info("%s: auto-executing (cost=%.2f <= limit=%.2f)", symbol, cost, auto_limit)
-            self._auto_execute(analysis, legs, cost)
+            self._auto_execute(analysis, legs, entry_price, cost)
         else:
             reason = "above auto-trade limit" if risk.passed else "; ".join(risk.violations)
             logger.info("%s: queuing for approval — %s", symbol, reason)
-            self._queue_for_approval(analysis, legs, cost, reason)
+            self._queue_for_approval(analysis, legs, entry_price, cost, reason)
 
-    def _extract_legs(self, analysis) -> list[dict]:
-        """Convert LLM analysis legs to journal leg format."""
-        raw_legs = []
-        if analysis.context_snapshot and "legs" in analysis.context_snapshot:
-            raw_legs = analysis.context_snapshot["legs"]
-        # Legs from parsed response are stored in context_snapshot by run_analysis when available.
-        # Fall back to building a synthetic single-leg from suggestion fields.
-        return raw_legs
+    def _estimate_cost(self, legs: list[dict]) -> float:
+        """Capital at risk for one lot: max loss at expiry (debit paid, or width minus credit)."""
+        from magpie.dashboard.payoff import max_loss
 
-    def _estimate_cost(self, analysis, equity: float) -> float:
-        """Estimate trade cost from entry price. Defaults to 1% of equity if unknown."""
-        if analysis.suggested_entry and analysis.suggested_entry > 0:
-            # Option premium × 100 (multiplier) × 1 contract
-            return analysis.suggested_entry * 100
-        return equity * 0.01  # conservative default: 1% of equity
+        return -max_loss(legs)
 
-    def _auto_execute(self, analysis, legs: list[dict], cost: float) -> None:
-        from magpie.execution.orders import place_multileg_order, place_single_option_order
+    def _auto_execute(self, analysis, legs: list[dict], entry_price: float, cost: float) -> None:
+        from magpie.execution.orders import (
+            place_multileg_order,
+            place_single_option_order,
+            signed_limit_price,
+        )
         from magpie.tracking.journal import create_trade
 
         try:
@@ -164,17 +167,12 @@ class AgentLoop:
                     {"contract_id": leg["contract_symbol"], "action": leg["side"], "qty": abs(leg.get("quantity", 1))}
                     for leg in legs
                 ]
-                order = place_multileg_order(order_legs, limit_price=analysis.suggested_entry)
-            elif len(legs) == 1:
+                order = place_multileg_order(order_legs, limit_price=signed_limit_price(legs, entry_price), qty=1)
+            else:
                 leg = legs[0]
                 order = place_single_option_order(
-                    leg["contract_symbol"], leg["side"],
-                    abs(leg.get("quantity", 1)), limit_price=analysis.suggested_entry
+                    leg["contract_symbol"], leg["side"], 1, limit_price=entry_price
                 )
-            else:
-                logger.warning("No legs to execute for %s — saving as pending instead", analysis.underlying_symbol)
-                self._queue_for_approval(analysis, legs, cost, "no legs resolved")
-                return
 
             trade_id = create_trade(
                 trade_mode="paper",
@@ -183,7 +181,7 @@ class AgentLoop:
                 quantity=1,
                 status="open",
                 strategy_type=analysis.strategy_suggested,
-                entry_price=analysis.suggested_entry,
+                entry_price=entry_price,
                 legs=legs,
                 entry_rationale=analysis.reasoning_summary,
                 alpaca_order_id=order["id"],
@@ -192,9 +190,11 @@ class AgentLoop:
 
         except Exception:
             logger.exception("Auto-execution failed for %s — saving as pending", analysis.underlying_symbol)
-            self._queue_for_approval(analysis, legs, cost, "order placement failed")
+            self._queue_for_approval(analysis, legs, entry_price, cost, "order placement failed")
 
-    def _queue_for_approval(self, analysis, legs: list[dict], cost: float, reason: str) -> None:
+    def _queue_for_approval(
+        self, analysis, legs: list[dict], entry_price: float, cost: float, reason: str
+    ) -> None:
         from magpie.tracking.journal import create_trade
 
         trade_id = create_trade(
@@ -204,10 +204,10 @@ class AgentLoop:
             quantity=1,
             status="pending_approval",
             strategy_type=analysis.strategy_suggested,
-            entry_price=analysis.suggested_entry,
+            entry_price=entry_price,
             legs=legs,
             entry_rationale=analysis.reasoning_summary,
-            notes=f"Pending approval: {reason}",
+            notes=f"Pending approval: {reason} (max loss ${cost:,.0f}/lot)",
         )
         logger.info(
             "Queued %s for approval → trade_id=%s reason=%s",
@@ -220,6 +220,67 @@ class AgentLoop:
         conn = get_connection()
         rows = conn.execute("SELECT symbol FROM watchlist ORDER BY priority DESC, symbol ASC").fetchall()
         return [r[0] for r in rows]
+
+
+MAX_MLEG_LEGS = 4  # Alpaca multi-leg orders accept 2-4 legs
+
+
+def resolve_legs(symbol: str, llm_legs: list[dict], context: dict, fetch_snapshot=None) -> list[dict]:
+    """Map the LLM's suggested legs to quoted OCC contracts in journal leg format.
+
+    Premiums come from the chain in ``context`` when the contract is there, otherwise from a
+    live snapshot. Returns [] if any leg is malformed or unquoted — a partial spread is never
+    traded.
+    """
+    from datetime import date
+
+    from magpie.market.occ import build_occ
+
+    if fetch_snapshot is None:
+        from magpie.market.options import get_option_snapshot as fetch_snapshot
+
+    if not llm_legs or len(llm_legs) > MAX_MLEG_LEGS:
+        logger.warning("%s: expected 1-%d legs, got %d", symbol, MAX_MLEG_LEGS, len(llm_legs or []))
+        return []
+
+    chain = context.get("options_chain") or {}
+    quotes = {c["contract_id"]: c for c in (chain.get("calls") or []) + (chain.get("puts") or [])}
+
+    legs = []
+    for raw in llm_legs:
+        try:
+            action = str(raw["action"]).lower()
+            option_type = str(raw["option_type"]).lower()
+            strike = float(raw["strike"])
+            expiry = date.fromisoformat(str(raw["expiry"]))
+            if action not in ("buy", "sell"):
+                raise ValueError(f"invalid action {action!r}")
+            contract = build_occ(symbol, expiry, option_type, strike)
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("%s: malformed leg %r (%s)", symbol, raw, exc)
+            return []
+
+        quote = quotes.get(contract)
+        if quote is None:
+            try:
+                quote = fetch_snapshot(contract)
+            except Exception:
+                logger.warning("%s: snapshot fetch failed for %s", symbol, contract, exc_info=True)
+                return []
+        if not quote or not quote.get("mid"):
+            logger.warning("%s: no live quote for %s", symbol, contract)
+            return []
+
+        legs.append({
+            "contract_symbol": contract,
+            "option_type": option_type,
+            "strike_price": strike,
+            "expiry": expiry.isoformat(),
+            "quantity": 1 if action == "buy" else -1,
+            "premium": round(quote["mid"], 2),
+            "side": action,
+        })
+    return legs
 
 
 def main() -> None:

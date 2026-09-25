@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from magpie.market.occ import is_occ_symbol, parse_occ
+from magpie.market.occ import build_occ, is_occ_symbol, parse_occ
 
 
 class TestParseOCC:
@@ -57,3 +57,20 @@ class TestIsOCCSymbol:
 
     def test_empty(self):
         assert is_occ_symbol("") is False
+
+
+class TestBuildOCC:
+    def test_call(self):
+        assert build_occ("AAPL", date(2026, 3, 20), "call", 275.0) == "AAPL260320C00275000"
+
+    def test_put_fractional_strike(self):
+        assert build_occ("TLT", date(2026, 11, 6), "put", 74.5) == "TLT261106P00074500"
+
+    def test_round_trip(self):
+        for sym in ("SPY261106P00731000", "NVDA261030C00250000", "F260116P00012500"):
+            p = parse_occ(sym)
+            assert build_occ(p.underlying, p.expiry, p.option_type, p.strike) == sym
+
+    def test_invalid_type(self):
+        with pytest.raises(ValueError):
+            build_occ("AAPL", date(2026, 3, 20), "straddle", 275.0)

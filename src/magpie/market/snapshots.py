@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from magpie.market.stocks import get_snapshot, get_bars, compute_52w_range
 from magpie.market.options import get_option_chain
+
+TARGET_DTE = 35          # preferred expiry for new defined-risk positions
+STRIKE_RANGE_PCT = 0.20  # fetch strikes within ±20% of spot
+# One contract per target |delta|, ATM → OTM — covers short strikes and wings for spreads/condors
+LADDER_DELTAS = (0.50, 0.40, 0.30, 0.25, 0.20, 0.16, 0.12, 0.08, 0.05)
 
 
 def build_analysis_context(symbol: str) -> dict:
@@ -13,8 +20,8 @@ def build_analysis_context(symbol: str) -> dict:
     Returns a structured dict containing:
     - underlying price and change metrics
     - recent price history summary
-    - option chain snapshot (calls and puts, filtered by liquidity)
-    - IV metrics
+    - option chain snapshot: one expiry near TARGET_DTE, ATM → OTM strike ladder per side
+    - IV metrics (ATM IV of that expiry)
     """
     # ── Underlying ──────────────────────────────────────────────────────────
     stock_snap = get_snapshot(symbol)
@@ -38,22 +45,27 @@ def build_analysis_context(symbol: str) -> dict:
 
     # ── Options chain ────────────────────────────────────────────────────────
     # Fetch 15–45 DTE range — the sweet spot for most defined-risk strategies
+    price = stock_snap.get("price")
     try:
-        chain = get_option_chain(symbol, dte_min=15, dte_max=45, strike_count=8)
+        chain = get_option_chain(
+            symbol,
+            dte_min=15,
+            dte_max=45,
+            strike_min=price * (1 - STRIKE_RANGE_PCT) if price else None,
+            strike_max=price * (1 + STRIKE_RANGE_PCT) if price else None,
+        )
     except Exception:
         chain = []
 
-    calls = [c for c in chain if _is_call(c)]
-    puts = [c for c in chain if not _is_call(c)]
-
-    # Sort by absolute delta descending (most ATM first)
-    calls.sort(key=lambda c: abs(c.get("delta") or 0), reverse=True)
-    puts.sort(key=lambda c: abs(c.get("delta") or 0), reverse=True)
+    # Focus on a single expiry so the LLM sees one coherent strike ladder
+    expiry = _pick_expiry(chain, TARGET_DTE)
+    expiry_chain = [c for c in chain if c.get("expiry") == expiry]
+    calls = _delta_ladder(expiry_chain, "call")
+    puts = _delta_ladder(expiry_chain, "put")
 
     # ── IV metrics ───────────────────────────────────────────────────────────
-    ivs = [c["implied_volatility"] for c in chain if c.get("implied_volatility")]
-    avg_iv = sum(ivs) / len(ivs) if ivs else None
-    iv_rank = _compute_iv_rank(symbol, avg_iv)
+    atm_iv = _atm_iv(expiry_chain, price)
+    iv_rank = _compute_iv_rank(symbol, atm_iv)
 
     # ── Market regime ──────────────────────────────────────────────────────
     try:
@@ -68,12 +80,14 @@ def build_analysis_context(symbol: str) -> dict:
         "symbol": symbol,
         "underlying": underlying,
         "options_chain": {
-            "calls": calls[:10],    # top 10 most ATM calls
-            "puts": puts[:10],
+            "expiry": expiry,
+            "dte": (date.fromisoformat(expiry) - date.today()).days if expiry else None,
+            "calls": calls,
+            "puts": puts,
             "total_contracts": len(chain),
         },
         "iv_metrics": {
-            "current_iv": avg_iv,
+            "current_iv": atm_iv,
             "iv_rank": iv_rank,
         },
         "price_history_summary": {
@@ -84,14 +98,50 @@ def build_analysis_context(symbol: str) -> dict:
     }
 
 
-def _is_call(contract: dict) -> bool:
-    """Determine if a contract is a call by its delta sign (positive = call)."""
-    delta = contract.get("delta")
-    if delta is None:
-        # Fall back to contract_id OCC parsing: ...C... or ...P...
-        cid = contract.get("contract_id", "")
-        return "C" in cid[-10:]
-    return delta >= 0
+def _pick_expiry(chain: list[dict], target_dte: int, today: date | None = None) -> str | None:
+    """Return the ISO expiry in the chain closest to target_dte (ties → later expiry)."""
+    today = today or date.today()
+    expiries = {c["expiry"] for c in chain if c.get("expiry")}
+    if not expiries:
+        return None
+    return min(
+        expiries,
+        key=lambda e: (abs((date.fromisoformat(e) - today).days - target_dte), -date.fromisoformat(e).toordinal()),
+    )
+
+
+def _delta_ladder(contracts: list[dict], option_type: str) -> list[dict]:
+    """Pick the quoted contract nearest each LADDER_DELTAS target, ordered ATM → OTM."""
+    quoted = [
+        c for c in contracts
+        if c.get("option_type") == option_type and c.get("delta") is not None and c.get("mid")
+    ]
+    picked: dict[str, dict] = {}
+    for target in LADDER_DELTAS:
+        if not quoted:
+            break
+        best = min(quoted, key=lambda c: abs(abs(c["delta"]) - target))
+        # Skip targets far outside what the chain offers (e.g. no 5Δ strike within range)
+        if abs(abs(best["delta"]) - target) <= max(0.05, target * 0.35):
+            picked[best["contract_id"]] = best
+    return sorted(picked.values(), key=lambda c: abs(c["delta"]), reverse=True)
+
+
+def _atm_iv(contracts: list[dict], price: float | None) -> float | None:
+    """Average IV of the call and put struck nearest the underlying price."""
+    if not price:
+        return None
+    ivs = []
+    for option_type in ("call", "put"):
+        side = [
+            c for c in contracts
+            if c.get("option_type") == option_type
+            and c.get("implied_volatility")
+            and c.get("strike") is not None
+        ]
+        if side:
+            ivs.append(min(side, key=lambda c: abs(c["strike"] - price))["implied_volatility"])
+    return sum(ivs) / len(ivs) if ivs else None
 
 
 def _compute_iv_rank(symbol: str, current_iv: float | None) -> float | None:

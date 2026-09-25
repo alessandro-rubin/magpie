@@ -35,7 +35,10 @@ class Settings(BaseSettings):
 
     # Groq (optional — alternative LLM provider)
     groq_api_key: str | None = Field(None, description="Groq API key")
-    groq_model: str = Field("llama-3.3-70b-versatile", description="Groq model to use for analysis")
+    groq_model: str = Field("openai/gpt-oss-120b", description="Groq model to use for analysis")
+    groq_reasoning_effort: str = Field(
+        "medium", description="Reasoning effort for gpt-oss models: 'low', 'medium', or 'high'"
+    )
 
     # Database
     magpie_db_path: Path = Field(Path("./data/magpie.sqlite"), description="SQLite file path")

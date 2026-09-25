@@ -63,7 +63,7 @@ def approve_trade(
 ) -> None:
     """Approve a pending trade and place the order via Alpaca."""
     from magpie.db.connection import get_connection
-    from magpie.execution.orders import place_multileg_order, place_single_option_order
+    from magpie.execution.orders import place_multileg_order, place_single_option_order, signed_limit_price
     from magpie.tracking.journal import update_trade_status
     import json
 
@@ -86,19 +86,23 @@ def approve_trade(
     legs = json.loads(legs_json) if legs_json else []
 
     price = limit_price or entry_price
-    console.print(f"Placing order for [bold]{symbol}[/bold] [{strategy}] qty={quantity} limit={price}")
+    lots = int(quantity or 1)
 
     try:
         if len(legs) > 1:
+            # Price is a magnitude; the sign (credit/debit) comes from the leg structure
+            signed = signed_limit_price(legs, price) if price else None
+            console.print(f"Placing order for [bold]{symbol}[/bold] [{strategy}] qty={lots} limit={signed}")
             order_legs = [
                 {"contract_id": leg["contract_symbol"], "action": leg["side"], "qty": abs(leg.get("quantity", 1))}
                 for leg in legs
             ]
-            order = place_multileg_order(order_legs, limit_price=price)
+            order = place_multileg_order(order_legs, limit_price=signed, qty=lots)
         elif len(legs) == 1:
             leg = legs[0]
+            console.print(f"Placing order for [bold]{symbol}[/bold] [{strategy}] qty={lots} limit={price}")
             order = place_single_option_order(
-                leg["contract_symbol"], leg["side"], abs(leg.get("quantity", 1)), limit_price=price
+                leg["contract_symbol"], leg["side"], lots * abs(leg.get("quantity", 1)), limit_price=price
             )
         else:
             console.print("[yellow]No legs defined — marking open without placing Alpaca order.[/yellow]")

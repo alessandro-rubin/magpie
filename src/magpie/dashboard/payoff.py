@@ -71,3 +71,15 @@ def price_range_for_legs(
     spread = max(strikes) - min(strikes) if len(strikes) > 1 else center * 0.1
     margin = max(center * margin_pct, spread * 2)
     return round(center - margin, 2), round(center + margin, 2)
+
+
+def max_loss(legs: list[dict]) -> float:
+    """Worst-case P&L at expiration in dollars (≤ 0), per lot.
+
+    Payoff is piecewise-linear with kinks only at strikes, so the minimum lies at a
+    strike or an endpoint. The upper endpoint (2× highest strike) makes undefined-risk
+    positions (e.g. naked short calls) show a large loss instead of a false bound.
+    """
+    strikes = sorted({float(leg["strike_price"]) for leg in legs})
+    points = np.array([0.0, *strikes, max(strikes) * 2])
+    return float(min(compute_payoff(legs, points).min(), 0.0))

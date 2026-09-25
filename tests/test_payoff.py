@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from magpie.dashboard.payoff import compute_payoff, find_breakevens, price_range_for_legs
+from magpie.dashboard.payoff import compute_payoff, find_breakevens, max_loss, price_range_for_legs
 
 
 class TestComputePayoff:
@@ -144,3 +144,29 @@ class TestPriceRange:
         low, high = price_range_for_legs(legs)
         center = 280  # average of strikes
         assert low < center < high
+
+
+class TestMaxLoss:
+    def _leg(self, option_type, strike, quantity, premium):
+        return {"option_type": option_type, "strike_price": strike, "quantity": quantity, "premium": premium}
+
+    def test_bull_put_credit_spread(self):
+        # Sell 731P @ 3.95, buy 721P @ 3.04 → credit 0.91 on $10 width → max loss (10 - 0.91) * 100
+        legs = [self._leg("put", 731, -1, 3.95), self._leg("put", 721, 1, 3.04)]
+        assert max_loss(legs) == pytest.approx(-909.0)
+
+    def test_debit_spread_loses_debit(self):
+        legs = [self._leg("call", 100, 1, 5.0), self._leg("call", 110, -1, 2.0)]
+        assert max_loss(legs) == pytest.approx(-300.0)
+
+    def test_iron_condor_worst_wing(self):
+        legs = [
+            self._leg("put", 721, 1, 3.04), self._leg("put", 731, -1, 3.95),
+            self._leg("call", 803, -1, 2.84), self._leg("call", 813, 1, 1.48),
+        ]
+        # Credit 2.27 on $10 wings → (10 - 2.27) * 100
+        assert max_loss(legs) == pytest.approx(-773.0)
+
+    def test_naked_short_call_is_not_bounded_by_strikes(self):
+        loss = max_loss([self._leg("call", 100, -1, 2.0)])
+        assert loss < -9000  # at 2x strike: (200 - 100 - 2) * 100

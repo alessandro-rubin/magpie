@@ -6,6 +6,7 @@ import magpie.db.connection as conn_mod
 import magpie.tracking.rules as rules_mod
 import magpie.tracking.journal as journal_mod
 import magpie.analysis.feedback as feedback_mod
+import magpie.tracking.notes as notes_mod
 from magpie.tracking.rules import (
     add_rule,
     list_rules,
@@ -24,6 +25,7 @@ def _patch_db(db, monkeypatch):
     monkeypatch.setattr(rules_mod, "get_connection", lambda: db)
     monkeypatch.setattr(journal_mod, "get_connection", lambda: db)
     monkeypatch.setattr(feedback_mod, "get_connection", lambda: db)
+    monkeypatch.setattr(notes_mod, "get_connection", lambda: db)
 
 
 class TestAddRule:
@@ -172,3 +174,14 @@ class TestFeedbackIntegration:
         assert "Trading Rules" in combined["narrative"]
         assert "Max 2-3 lots" in combined["narrative"]
         assert "rules_text" in combined
+
+    def test_rules_injected_without_recent_trades(self, _patch_db):
+        """Rules are standing instructions — they must reach the prompt even with no closed trades."""
+        add_rule("risk", "Close spreads at 14 DTE")
+
+        combined = feedback_mod.get_combined_feedback(window_days=30)
+        assert "Close spreads at 14 DTE" in combined["narrative"]
+        assert "No closed trades in the last 30 days" in combined["narrative"]
+
+    def test_empty_when_no_trades_rules_or_notes(self, _patch_db):
+        assert feedback_mod.get_combined_feedback(window_days=30) == {}

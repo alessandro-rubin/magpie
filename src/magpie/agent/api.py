@@ -216,34 +216,38 @@ def list_pending() -> JSONResponse:
 def approve_trade(trade_id: str, request: TradeApprovalRequest | None = None) -> JSONResponse:
     """Approve a pending trade and place the order via Alpaca."""
     from magpie.db.connection import get_connection
-    from magpie.execution.orders import place_multileg_order, place_single_option_order
+    from magpie.execution.orders import place_multileg_order, place_single_option_order, signed_limit_price
     from magpie.tracking.journal import update_trade_status
     import json as _json
 
     conn = get_connection()
     row = conn.execute(
-        "SELECT id, underlying_symbol, legs, quantity FROM trade_journal WHERE id = ? AND status = 'pending_approval'",
+        "SELECT id, underlying_symbol, legs, quantity, entry_price FROM trade_journal "
+        "WHERE id = ? AND status = 'pending_approval'",
         [trade_id],
     ).fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="Pending trade not found")
 
-    _, symbol, legs_json, quantity = row
+    _, symbol, legs_json, quantity, entry_price = row
     legs = _json.loads(legs_json) if legs_json else []
-    limit_price = request.limit_price if request else None
+    limit_price = (request.limit_price if request else None) or entry_price
+    lots = int(quantity or 1)
 
     try:
         if len(legs) > 1:
+            # Price is a magnitude; the sign (credit/debit) comes from the leg structure
             order_legs = [
                 {"contract_id": leg["contract_symbol"], "action": leg["side"], "qty": abs(leg["quantity"])}
                 for leg in legs
             ]
-            order = place_multileg_order(order_legs, limit_price=limit_price)
+            signed = signed_limit_price(legs, limit_price) if limit_price else None
+            order = place_multileg_order(order_legs, limit_price=signed, qty=lots)
         elif len(legs) == 1:
             leg = legs[0]
             order = place_single_option_order(
-                leg["contract_symbol"], leg["side"], abs(leg["quantity"]), limit_price=limit_price
+                leg["contract_symbol"], leg["side"], lots * abs(leg["quantity"]), limit_price=limit_price
             )
         else:
             raise HTTPException(status_code=400, detail="Trade has no legs defined")

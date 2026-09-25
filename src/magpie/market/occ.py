@@ -56,6 +56,18 @@ def parse_occ(symbol: str) -> OCCComponents:
     )
 
 
+def build_occ(underlying: str, expiry: date, option_type: str, strike: float) -> str:
+    """Build an OCC option symbol — the inverse of parse_occ().
+
+    >>> build_occ("AAPL", date(2026, 3, 20), "call", 275.0)
+    'AAPL260320C00275000'
+    """
+    opt_char = {"call": "C", "put": "P"}.get(option_type.lower())
+    if opt_char is None:
+        raise ValueError(f"Invalid option type {option_type!r}")
+    return f"{underlying.upper()}{expiry:%y%m%d}{opt_char}{round(strike * 1000):08d}"
+
+
 def is_occ_symbol(symbol: str) -> bool:
     """Return True if symbol looks like an OCC option symbol."""
     try:

@@ -2,7 +2,7 @@
 
 Supports multiple providers via LLM_PROVIDER setting:
   - "anthropic" (default): Claude models via Anthropic SDK
-  - "groq": Llama/Mixtral models via Groq SDK (openai-compatible)
+  - "groq": open-weight models (default gpt-oss-120b) via Groq SDK (openai-compatible)
 
 If the configured provider's API key is not set, run_analysis() raises LLMKeyMissing.
 The CLI handles this by printing the formatted prompt for manual use in Claude Code.
@@ -82,16 +82,24 @@ def _call_api_anthropic(model: str, prompt: str) -> str:
 
 
 def _call_api_groq(model: str, prompt: str) -> str:
+    from magpie.config import settings
+
     client = _get_groq_client()
+    # Reasoning models (gpt-oss) spend completion tokens on hidden reasoning before
+    # the answer — 1024 truncates the JSON (finish_reason="length"), so allow more.
+    kwargs = {}
+    if model.startswith("openai/gpt-oss"):
+        kwargs["reasoning_effort"] = settings.groq_reasoning_effort
     response = client.chat.completions.create(
         model=model,
-        max_tokens=1024,
+        max_tokens=4096,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
+        **kwargs,
     )
-    return response.choices[0].message.content
+    return response.choices[0].message.content or ""
 
 
 @retry(

@@ -4,7 +4,7 @@ Bump PROMPT_VERSION whenever system or analysis prompts change so that
 prediction accuracy can be tracked per prompt version in the DB.
 """
 
-PROMPT_VERSION = "v1.1"
+PROMPT_VERSION = "v1.2"
 
 # ── System prompt ────────────────────────────────────────────────────────────
 
@@ -56,6 +56,16 @@ Schema:
 }
 
 If the recommendation is "avoid", legs may be an empty array.
+
+Field rules:
+- entry_price: net premium PER SHARE for the whole position, as a positive number — the credit \
+received (credit spreads, iron condors) or the debit paid (debit spreads, long options). \
+NEVER the underlying's price.
+- stop_price / target_price: the position's price per share at which to exit for a loss / profit \
+(same units as entry_price), not underlying price levels.
+- legs: use only strikes and the expiry listed in the Options Chain section, copied exactly.
+- Respect every Trading Rule in the feedback section; if the trade you would pick violates one, \
+choose a compliant structure or recommend "avoid".
 """
 
 # ── Analysis prompt template ─────────────────────────────────────────────────
@@ -73,16 +83,16 @@ Analyze the following market data for {symbol} and provide an options trading re
 - Volume: {volume}
 
 ## IV Metrics
-- Current avg IV (chain): {current_iv}
+- ATM IV ({expiry}): {current_iv}
 - IV Rank (0-100): {iv_rank}
 
-## Options Chain Snapshot (15–45 DTE)
-Total liquid contracts found: {total_contracts}
+## Options Chain — expiry {expiry} ({dte} DTE)
+Contracts found (15–45 DTE, ±20% of spot): {total_contracts}
 
-Top ATM Calls:
+Calls (ATM → OTM):
 {calls_summary}
 
-Top ATM Puts:
+Puts (ATM → OTM):
 {puts_summary}
 
 ## Recent Price History (last 5 days)
@@ -151,14 +161,18 @@ def format_analysis_prompt(
         if not contracts:
             return "  None available\n"
         lines = []
-        for c in contracts[:5]:
+        for c in contracts:
             cid = c.get("contract_id", "")
+            strike = _price(c.get("strike"))
             delta = f"{c['delta']:.2f}" if c.get("delta") else "N/A"
             iv_str = f"{c['implied_volatility'] * 100:.1f}%" if c.get("implied_volatility") else "N/A"
             theta = f"{c['theta']:.4f}" if c.get("theta") else "N/A"
+            quote = f"${_price(c.get('bid'))}/${_price(c.get('ask'))}"
             mid = f"${c['mid']:.2f}" if c.get("mid") else "N/A"
-            oi = c.get("open_interest") or 0
-            lines.append(f"  {cid}: delta={delta}, IV={iv_str}, theta={theta}/day, mid={mid}, OI={oi}")
+            lines.append(
+                f"  {cid}: strike={strike}, delta={delta}, IV={iv_str}, theta={theta}/day, "
+                f"bid/ask={quote}, mid={mid}"
+            )
         return "\n".join(lines)
 
     def _summarize_bars(bars: list[dict]) -> str:
@@ -194,7 +208,9 @@ def format_analysis_prompt(
         low_52w=_price(underlying.get("low_52w")),
         high_52w=_price(underlying.get("high_52w")),
         volume=f"{underlying.get('volume') or 0:,}",
-        current_iv=_pct(iv.get("current_iv")),
+        current_iv=f"{iv['current_iv'] * 100:.1f}%" if iv.get("current_iv") else "N/A",
+        expiry=chain.get("expiry") or "N/A",
+        dte=chain.get("dte") if chain.get("dte") is not None else "N/A",
         iv_rank=f"{iv.get('iv_rank'):.1f}" if iv.get("iv_rank") is not None else "N/A",
         total_contracts=chain.get("total_contracts", 0),
         calls_summary=_summarize_contracts(chain.get("calls", [])),

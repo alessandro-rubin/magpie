@@ -12,6 +12,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from magpie.db.models import OptionContract, OptionSnapshot
 from magpie.market.client import get_option_data_client
+from magpie.market.occ import parse_occ
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -21,11 +22,14 @@ def get_option_chain(
     dte_max: int = 60,
     option_type: str | None = None,         # 'call' | 'put' | None (both)
     strike_count: int = 10,                  # strikes above/below ATM to include
+    strike_min: float | None = None,
+    strike_max: float | None = None,
 ) -> list[dict]:
     """
-    Return option chain contracts for a symbol filtered by DTE range.
+    Return option chain contracts for a symbol filtered by DTE range (and optionally strike range).
 
-    Returns a list of contract dicts with snapshot data (Greeks, IV, prices).
+    Returns a list of contract dicts with snapshot data (Greeks, IV, prices) plus
+    strike, expiry (ISO string), and option_type parsed from the OCC symbol.
     """
     client = get_option_data_client()
 
@@ -38,6 +42,8 @@ def get_option_chain(
         expiration_date_gte=expiry_start,
         expiration_date_lte=expiry_end,
         type=option_type,
+        strike_price_gte=round(strike_min, 2) if strike_min is not None else None,
+        strike_price_lte=round(strike_max, 2) if strike_max is not None else None,
         limit=strike_count * 2 * 4,        # rough upper bound
     )
 
@@ -45,6 +51,11 @@ def get_option_chain(
 
     contracts = []
     for contract_symbol, snapshot in response.items():
+        try:
+            occ = parse_occ(contract_symbol)
+        except ValueError:
+            occ = None
+
         greeks = snapshot.greeks if hasattr(snapshot, "greeks") else None
         latest_quote = snapshot.latest_quote if hasattr(snapshot, "latest_quote") else None
         latest_trade = snapshot.latest_trade if hasattr(snapshot, "latest_trade") else None
@@ -59,6 +70,9 @@ def get_option_chain(
         contracts.append({
             "contract_id": contract_symbol,
             "underlying_symbol": symbol,
+            "strike": occ.strike if occ else None,
+            "expiry": occ.expiry.isoformat() if occ else None,
+            "option_type": occ.option_type if occ else None,
             # Greeks
             "implied_volatility": float(snapshot.implied_volatility) if snapshot.implied_volatility else None,
             "delta": float(greeks.delta) if greeks and greeks.delta else None,
